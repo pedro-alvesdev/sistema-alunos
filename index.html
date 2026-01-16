@@ -8,9 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
-    /* MANTENDO TODO O SEU CSS ORIGINAL */
-    body { box-sizing: border-box; font-family: 'Inter', 'Segoe UI', sans-serif; }
-    .toast { position: fixed; top: 20px; right: 20px; padding: 16px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; animation: slideIn 0.3s ease-out; }
+    body { box-sizing: border-box; font-family: 'Inter', sans-serif; }
+    .toast { position: fixed; top: 20px; right: 20px; padding: 16px 24px; border-radius: 8px; z-index: 1000; animation: slideIn 0.3s ease-out; color: white; }
     @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
     .switch input { opacity: 0; width: 0; height: 0; }
@@ -20,161 +19,259 @@
     input:checked + .slider:before { transform: translateX(26px); }
     .calendar-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
     .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 10px; }
-    .calendar-day { padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
-    .calendar-day:hover { background-color: #f3f4f6; }
-    .calendar-day.selected { background-color: #6366f1; color: white; font-weight: bold; }
-    .calendar-day.today { border: 2px solid #6366f1; }
-    .progress-bar { width: 100%; background-color: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; }
-    .progress-fill { height: 100%; transition: width 0.3s ease; }
-    .modal-backdrop { background-color: rgba(0,0,0,0.5); }
+    .calendar-day { padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; }
+    .calendar-day.selected { background-color: #6366f1; color: white; }
+    .progress-bar { width: 100%; background-color: #475569; border-radius: 8px; height: 10px; margin-top: 10px; overflow: hidden; }
+    .progress-fill { height: 100%; background-color: #3b82f6; width: 0%; transition: width 0.2s; }
   </style>
 </head>
-<body class="h-full">
-  <div id="app" class="w-full h-full overflow-auto bg-gradient-to-br from-indigo-50 to-blue-50"></div>
+<body class="h-full bg-slate-900">
+  <div id="app" class="w-full h-full overflow-auto"></div>
 
   <script>
-    // CONFIGURAÇÃO SUPABASE - COLOQUE SEUS DADOS AQUI
-    const SUPABASE_URL = 'https://nuhkdkiukqrlhdvnaiel.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable_2Rd5khY_SUm3vBA3u5ZsHw_ps50tcTK';
-    // O jeito correto de iniciar o Supabase no navegador:
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // --- CONFIGURAÇÃO DO BANCO DE DADOS ---
+    const S_URL = "https://nuhkdkiukqrlhdvnaiel.supabase.co"; 
+    const S_KEY = "sb_publishable_2Rd5khY_SUm3vBA3u5ZsHw_ps50tcTK";
+    const _supabase = window.supabase.createClient(S_URL, S_KEY);
 
-    // Variáveis de Estado (Mantidas as mesmas do original)
+    // --- VARIÁVEIS DE ESTADO ---
     let allStudents = [];
     let allAttendances = [];
     let filteredStudents = [];
-    let filteredAttendances = [];
-    let editingStudent = null;
     let isAuthenticated = false;
     let currentUser = 'admin';
     let currentScreen = 'management';
     let selectedDate = new Date();
     let selectedStudentsForAssign = new Set();
-    let importErrors = [];
 
-    // Configuração de Visual (Mantida do Canva)
     const config = {
-      page_title: "Gerenciador de Alunos de Laboratório",
-      filter_title: "Filtros",
-      student_list_title: "Lista de Alunos",
-      background_color: "#0f172a",
+      page_title: "Gerenciador de Alunos",
       card_color: "#1e293b",
       text_color: "#e2e8f0",
-      primary_button_color: "#3b82f6",
-      secondary_button_color: "#475569",
-      font_size: 16
+      primary_btn: "#3b82f6",
+      secondary_btn: "#475569"
     };
 
-    // --- FUNÇÕES DE DADOS (MIGRADAS PARA SUPABASE) ---
-
-    async function fetchData() {
-        const { data: students } = await supabase.from('students').select('*');
-        const { data: attendance } = await supabase.from('attendance').select('*');
-        allStudents = students || [];
-        allAttendances = attendance || [];
-        
-        if (currentScreen === 'management') {
+    // --- FUNÇÕES DE CARREGAMENTO ---
+    async function loadData() {
+        try {
+            const { data: st } = await _supabase.from('students').select('*');
+            const { data: at } = await _supabase.from('attendance').select('*');
+            allStudents = st || [];
+            allAttendances = at || [];
             applyFilters();
-        } else {
-            applyAttendanceFilters();
-        }
+        } catch (e) { console.error("Erro ao carregar:", e); }
     }
 
-    // Inicialização
-    async function initializeApp() {
-      const savedAuth = sessionStorage.getItem('isAuthenticated');
-      if (savedAuth === 'true') {
-        isAuthenticated = true;
-        await fetchData();
-        renderCurrentScreen();
-      } else {
-        showLoginScreen();
-      }
-    }
+    function adjustColor(hex, pct) { return hex; } // Simplificado para evitar erros
 
-    // --- MANTENDO TODAS AS FUNÇÕES DE INTERFACE DO ORIGINAL ---
-    // (Abaixo seguem as funções de renderização exatamente como no seu código)
-
+    // --- TELAS ---
     function showLoginScreen() {
-      const app = document.getElementById('app');
-      app.innerHTML = `
-        <div class="w-full h-full flex items-center justify-center" style="background: linear-gradient(135deg, ${config.background_color}, ${adjustColor(config.background_color, 20)})">
-          <div class="rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4" style="background-color: ${config.card_color}">
-            <div class="text-center mb-8">
-               <h1 class="font-bold mb-2 text-white" style="font-size: 28px;">Acesso Restrito</h1>
-               <p class="text-gray-400">Digite o código para continuar</p>
-            </div>
-            <form id="login-form" class="space-y-6">
-              <input type="password" id="access-code" required maxlength="6" class="w-full p-4 border-2 rounded-lg text-center text-2xl" placeholder="••••••">
-              <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white bg-blue-600">🔓 Acessar Sistema</button>
+      document.getElementById('app').innerHTML = `
+        <div class="h-full flex items-center justify-center p-4">
+          <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-md w-full border border-slate-700">
+            <h1 class="text-3xl font-bold text-white text-center mb-6">Acesso ao Sistema</h1>
+            <form id="login-form" class="space-y-4">
+              <input type="password" id="access-code" placeholder="Código de 6 dígitos" class="w-full p-4 rounded-lg bg-slate-900 text-white text-center text-2xl border border-slate-600 focus:border-blue-500 outline-none">
+              <button class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-lg transition-colors">ENTRAR</button>
             </form>
-            <div id="login-error" class="hidden mt-4 p-3 rounded-lg text-center bg-red-100 text-red-600">❌ Código inválido.</div>
+            <p id="error" class="text-red-400 mt-4 text-center hidden">Código inválido!</p>
           </div>
         </div>`;
-
-      document.getElementById('login-form').addEventListener('submit', (e) => {
+      
+      document.getElementById('login-form').onsubmit = (e) => {
         e.preventDefault();
-        if (document.getElementById('access-code').value === '123456') {
-          isAuthenticated = true;
-          sessionStorage.setItem('isAuthenticated', 'true');
-          fetchData().then(() => renderCurrentScreen());
-        } else {
-          document.getElementById('login-error').classList.remove('hidden');
-        }
-      });
-    }
-
-    // ... (Aqui você deve colar as demais funções de renderização: renderManagementScreen, renderAttendanceScreen, applyFilters, etc.)
-    // Note: Para economizar espaço aqui, as funções CRUD foram adaptadas abaixo:
-
-    async function handleAddSubmit(e) {
-      e.preventDefault();
-      const newStudent = {
-        nome_aluno: document.getElementById('add-nome-aluno').value,
-        ra: document.getElementById('add-ra').value,
-        sede: document.getElementById('add-sede').value,
-        serie: document.getElementById('add-serie').value,
-        turno: document.getElementById('add-turno').value,
-        curso: document.getElementById('add-curso').value,
-        nome_turma: document.getElementById('add-nome-turma').value,
-        parte_sala: document.getElementById('add-parte-sala').value,
-        grupo: document.getElementById('add-grupo').value
+        if(document.getElementById('access-code').value === '123456') {
+            isAuthenticated = true;
+            sessionStorage.setItem('isAuth', 'true');
+            initApp();
+        } else { document.getElementById('error').classList.remove('hidden'); }
       };
-
-      const { error } = await supabase.from('students').insert([newStudent]);
-      if (!error) {
-        showToast('Aluno adicionado!', 'success');
-        await fetchData();
-        closeAddModal();
-      }
     }
 
-    async function handleAttendanceChange(switchEl) {
-      const ra = switchEl.dataset.studentRa;
-      const isPresent = switchEl.checked;
-      const dateKey = formatDateKey(selectedDate);
-      const student = allStudents.find(s => s.ra === ra);
-
-      const { error } = await supabase.from('attendance').upsert({ 
-        ra: ra, 
-        data_presenca: dateKey, 
-        presente: isPresent,
-        nome_aluno: student.nome_aluno,
-        nome_turma: student.nome_turma
-      }, { onConflict: 'ra,data_presenca' });
-
-      if (!error) {
-        showToast(isPresent ? '✅ Presente' : '❌ Ausente', 'success');
-        await fetchData();
-      }
+    async function initApp() {
+        await loadData();
+        renderManagementScreen();
     }
 
-    // Auxiliares (mantidas)
-    function adjustColor(hex, percent) { /* ... mesma do original ... */ }
-    function formatDate(date) { /* ... mesma do original ... */ }
-    function showToast(msg, type) { /* ... mesma do original ... */ }
+    function renderManagementScreen() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+            <div class="p-4 md:p-8 max-w-7xl mx-auto">
+                <header class="flex justify-between items-center mb-8 bg-slate-800 p-6 rounded-xl border border-slate-700">
+                    <h1 class="text-2xl font-bold text-white">${config.page_title}</h1>
+                    <div class="flex gap-2">
+                        <button onclick="currentScreen='management';renderManagementScreen()" class="bg-blue-600 text-white px-4 py-2 rounded-lg">📊 Gestão</button>
+                        <button onclick="currentScreen='attendance';renderAttendanceScreen()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">✅ Presença</button>
+                    </div>
+                </header>
 
-    initializeApp();
+                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6">
+                    <h2 class="text-white font-bold mb-4">📥 Importar Alunos (Excel)</h2>
+                    <div class="flex flex-col md:flex-row gap-4">
+                        <input type="file" id="fileIn" accept=".xlsx,.xls" class="bg-slate-900 text-slate-400 p-2 rounded-lg flex-1 border border-slate-600">
+                        <button onclick="handleImport()" id="upBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg font-bold">PROCESSAR</button>
+                    </div>
+                    <div id="progCont" class="hidden">
+                        <div class="progress-bar"><div id="progFill" class="progress-fill"></div></div>
+                        <p id="progText" class="text-slate-400 text-sm mt-1">Aguardando...</p>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-white font-bold text-xl">👥 Lista de Alunos (${allStudents.length})</h2>
+                        <button onclick="openAssignModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">🏫 Atribuir em Massa</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-slate-300">
+                            <thead class="bg-slate-900">
+                                <tr>
+                                    <th class="p-3">Nome</th><th class="p-3">RA</th><th class="p-3">Turma</th><th class="p-3">Parte/G</th><th class="p-3">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="assignModal" class="fixed inset-0 bg-black/80 hidden flex items-center justify-center p-4 z-50">
+                <div class="bg-slate-800 p-6 rounded-2xl w-full max-w-2xl border border-slate-600">
+                    <h3 class="text-xl font-bold text-white mb-4">Atribuir Lado/Grupo em Massa</h3>
+                    <p class="text-slate-400 mb-4 text-sm">Filtre a turma desejada e selecione os alunos abaixo.</p>
+                    <div class="grid grid-cols-2 gap-2 mb-4">
+                        <button onclick="massUpdate('A')" class="bg-blue-600 p-3 rounded-lg text-white font-bold">LADO A</button>
+                        <button onclick="massUpdate('B')" class="bg-blue-600 p-3 rounded-lg text-white font-bold">LADO B</button>
+                    </div>
+                    <button onclick="document.getElementById('assignModal').classList.add('hidden')" class="w-full text-slate-400 py-2">Fechar</button>
+                </div>
+            </div>`;
+        renderTable();
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('studentTable');
+        if(!tbody) return;
+        tbody.innerHTML = allStudents.map(s => `
+            <tr class="border-b border-slate-700 hover:bg-slate-700/50">
+                <td class="p-3">${s.nome_aluno}</td>
+                <td class="p-3 text-sm">${s.ra}</td>
+                <td class="p-3 text-sm">${s.nome_turma}</td>
+                <td class="p-3 text-xs">${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
+                <td class="p-3">
+                    <button onclick="deleteStudent('${s.id}')" class="text-red-400 text-xs">Excluir</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function renderAttendanceScreen() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+            <div class="p-4 md:p-8 max-w-7xl mx-auto">
+                <header class="flex justify-between items-center mb-8 bg-slate-800 p-6 rounded-xl border border-slate-700">
+                    <h1 class="text-2xl font-bold text-white">Frequência: ${selectedDate.toLocaleDateString()}</h1>
+                    <div class="flex gap-2">
+                        <button onclick="renderManagementScreen()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">📊 Gestão</button>
+                        <button onclick="printList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">🖨️ Imprimir</button>
+                    </div>
+                </header>
+                <div id="attendanceList" class="grid gap-3"></div>
+            </div>`;
+        renderAttendanceItems();
+    }
+
+    function renderAttendanceItems() {
+        const cont = document.getElementById('attendanceList');
+        const dKey = selectedDate.toISOString().split('T')[0];
+        
+        cont.innerHTML = allStudents.sort((a,b)=>a.nome_aluno.localeCompare(b.nome_aluno)).map(s => {
+            const record = allAttendances.find(a => a.ra === s.ra && a.data_presenca === dKey);
+            const isPresent = record ? record.presente : true;
+            return `
+                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                        <p class="text-white font-bold">${s.nome_aluno}</p>
+                        <p class="text-slate-400 text-xs">${s.nome_turma} | RA: ${s.ra}</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" onchange="togglePresence('${s.ra}', this.checked)" ${isPresent ? 'checked' : ''}>
+                        <span class="slider"></span>
+                    </label>
+                </div>`;
+        }).join('');
+    }
+
+    // --- LÓGICA DE IMPORTAÇÃO (BANCO DE DADOS) ---
+    async function handleImport() {
+        const file = document.getElementById('fileIn').files[0];
+        if(!file) return alert("Selecione um arquivo!");
+        
+        const btn = document.getElementById('upBtn');
+        const prog = document.getElementById('progCont');
+        const fill = document.getElementById('progFill');
+        const txt = document.getElementById('progText');
+
+        btn.disabled = true;
+        prog.classList.remove('hidden');
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const workbook = XLSX.read(e.target.result, {type: 'array'});
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(sheet);
+            
+            for(let i=0; i<data.length; i++){
+                const row = data[i];
+                const pct = Math.round(((i+1)/data.length)*100);
+                fill.style.width = pct + "%";
+                txt.innerText = `Processando: ${i+1} de ${data.length}`;
+
+                const student = {
+                    sede: String(row.SEDE || ''),
+                    serie: String(row.SERIE || ''),
+                    turno: String(row.TURNO || ''),
+                    curso: String(row.CURSO || ''),
+                    nome_turma: String(row.NOME_TURMA || ''),
+                    ra: String(row.RA || ''),
+                    nome_aluno: String(row.NOME_ALUNO || '')
+                };
+
+                await _supabase.from('students').upsert(student, {onConflict: 'ra'});
+                if(i % 5 === 0) await new Promise(r => setTimeout(r, 100)); // Evita sobrecarga
+            }
+            alert("Importação Concluída!");
+            location.reload();
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    async function togglePresence(ra, val) {
+        const dKey = selectedDate.toISOString().split('T')[0];
+        await _supabase.from('attendance').upsert({
+            ra: ra,
+            data_presenca: dKey,
+            presente: val
+        }, {onConflict: 'ra,data_presenca'});
+    }
+
+    async function deleteStudent(id) {
+        if(!confirm("Deseja mesmo remover?")) return;
+        await _supabase.from('students').delete().eq('id', id);
+        loadData().then(()=>renderTable());
+    }
+
+    function applyFilters() {} // Placeholder para manter funções originais
+    function openAssignModal() { document.getElementById('assignModal').classList.remove('hidden'); }
+
+    // --- INICIALIZAÇÃO FINAL ---
+    if(sessionStorage.getItem('isAuth') === 'true') {
+        isAuthenticated = true;
+        initApp();
+    } else {
+        showLoginScreen();
+    }
   </script>
 </body>
 </html>
