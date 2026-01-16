@@ -36,7 +36,8 @@
     // CONFIGURAÇÃO SUPABASE - COLOQUE SEUS DADOS AQUI
     const SUPABASE_URL = 'https://nuhkdkiukqrlhdvnaiel.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_2Rd5khY_SUm3vBA3u5ZsHw_ps50tcTK';
-    const supabase = scoopedSupabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // O jeito correto de iniciar o Supabase no navegador:
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // Variáveis de Estado (Mantidas as mesmas do original)
     let allStudents = [];
