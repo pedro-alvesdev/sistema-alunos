@@ -177,10 +177,11 @@
               <div class="flex flex-col lg:flex-row justify-between items-center mb-6 gap-4">
                 <h2 class="font-semibold text-white text-xl">👥 ${config.student_list_title} (<span id="student-count">0</span>)</h2>
                 <div class="flex gap-2 flex-wrap justify-center">
-                    <button onclick="printStudentList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg text-sm">🖨️ Imprimir</button>
-                    <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">🏫 Atribuir Sala</button>
-                    <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Adicionar</button>
-                </div>
+    <button onclick="printStudentList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg text-sm">🖨️ Imprimir</button>
+    <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm">🏫 Atribuir Sala</button>
+    <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Adicionar</button>
+    <button onclick="deleteAllStudents()" class="bg-red-900/50 text-red-200 border border-red-800 px-4 py-2 rounded-lg text-sm hover:bg-red-800 transition-all">🗑️ Limpar Tudo</button>
+              </div>
               </div>
               <div id="student-list" class="overflow-x-auto"></div>
             </div>
@@ -295,7 +296,7 @@
                         <p class="text-white text-sm mb-2">Definir Grupo:</p>
                         <div class="flex gap-2">
                             <input id="mass-group-val" type="number" class="w-20 p-2 bg-slate-900 text-white rounded" placeholder="Ex: 1">
-                            <button onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
+                            <button onclick="onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
                         </div>
                     </div>
                 </div>
@@ -304,6 +305,144 @@
         </div>`;
     }
 
+   // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
+    function applyAttendanceFilters() {
+        const s = document.getElementById('attendance-filter-sede')?.value || 'todos';
+        const e = document.getElementById('attendance-filter-serie')?.value || 'todos';
+        const t = document.getElementById('attendance-filter-turno')?.value || 'todos';
+        const dKey = selectedDate.toISOString().split('T')[0];
+
+        const list = allStudents.filter(x => {
+            const mSede = s === 'todos' || x.sede === s;
+            const mSerie = e === 'todos' || x.serie === e;
+            const mTurma = t === 'todos' || x.nome_turma === t;
+            return mSede && mSerie && mTurma;
+        });
+
+        const countEl = document.getElementById('attendance-count');
+        if (countEl) countEl.innerText = list.length;
+
+        const cont = document.getElementById('attendance-list');
+        if (!cont) return;
+
+        if (list.length === 0) {
+            cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado para os filtros selecionados.</p>`;
+            return;
+        }
+
+        cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(x => {
+            const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
+            const present = att ? att.presente : true;
+            return `
+                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                    <div>
+                        <p class="text-white font-bold">${x.nome_aluno}</p>
+                        <p class="text-slate-500 text-xs">${x.nome_turma} | RA: ${x.ra}</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
+                        <span class="slider"></span>
+                    </label>
+                </div>`;
+        }).join('');
+    }
+
+    // --- FUNÇÕES DE IMPRESSÃO ---
+    function printStudentList() {
+        const win = window.open('', '_blank');
+        const html = `
+            <html>
+            <head>
+                <title>Lista de Alunos</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+                    th { background: #f2f2f2; }
+                    h1 { text-align: center; }
+                </style>
+            </head>
+            <body>
+                <h1>Lista Geral de Alunos</h1>
+                <p>Total de alunos: ${filteredStudents.length}</p>
+                <table>
+                    <thead>
+                        <tr><th>Nome</th><th>RA</th><th>Sede</th><th>Série</th><th>Turma</th><th>Lado/G</th></tr>
+                    </thead>
+                    <tbody>
+                        ${filteredStudents.map(s => `
+                            <tr>
+                                <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.sede}</td>
+                                <td>${s.serie}</td><td>${s.nome_turma}</td>
+                                <td>${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+                <script>window.print();<\/script>
+            </body>
+            </html>`;
+        win.document.write(html);
+        win.document.close();
+    }
+
+    function printAttendanceList() {
+        const dKey = selectedDate.toLocaleDateString('pt-BR');
+        const win = window.open('', '_blank');
+        const html = `
+            <html>
+            <head>
+                <title>Frequência - ${dKey}</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+                    th { background: #f2f2f2; }
+                    .status { font-weight: bold; }
+                    h1 { text-align: center; margin-bottom: 0; }
+                    .date { text-align: center; margin-top: 5px; color: #666; }
+                </style>
+            </head>
+            <body>
+                <h1>Relatório de Frequência</h1>
+                <p class="date">Data: ${dKey}</p>
+                <table>
+                    <thead>
+                        <tr><th>Nome</th><th>RA</th><th>Turma</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        ${allStudents.filter(s => {
+                            // Filtra apenas os que estão visíveis na tela no momento da impressão
+                            const sede = document.getElementById('attendance-filter-sede')?.value || 'todos';
+                            const serie = document.getElementById('attendance-filter-serie')?.value || 'todos';
+                            const turno = document.getElementById('attendance-filter-turno')?.value || 'todos';
+                            return (sede === 'todos' || s.sede === sede) && (serie === 'todos' || s.serie === serie) && (turno === 'todos' || s.nome_turma === turno);
+                        }).sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(s => {
+                            const att = allAttendances.find(a => a.ra === s.ra && a.data_presenca === selectedDate.toISOString().split('T')[0]);
+                            const present = att ? att.presente : true;
+                            return `
+                                <tr>
+                                    <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.nome_turma}</td>
+                                    <td class="status">${present ? 'PRESENTE' : 'AUSENTE'}</td>
+                                </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+                <script>window.print();<\/script>
+            </body>
+            </html>`;
+        win.document.write(html);
+        win.document.close();
+    }
+
+    function openCalendarPopup() {
+        // Como estamos usando milhares de registros, vamos usar o seletor nativo para simplificar
+        const novaData = prompt("Digite a data (AAAA-MM-DD):", selectedDate.toISOString().split('T')[0]);
+        if (novaData) {
+            selectedDate = new Date(novaData);
+            renderAttendanceScreen();
+        }
+    }
+    
     // --- LÓGICA DE NEGÓCIO (SUPABASE) ---
 
     async function handleExcelUpload() {
@@ -384,19 +523,62 @@
         }, { onConflict: 'ra,data_presenca' });
     }
 
+   // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
     async function massAssign(field, value) {
-        if(selectedStudentsForAssign.size === 0) return alert("Selecione alunos!");
-        showToast("Processando...", "info");
-        for (let id of selectedStudentsForAssign) {
-            const student = allStudents.find(s => s.id === id);
-            await _supabase.from('students').update({ [field]: value }).eq('id', id);
+        if (selectedStudentsForAssign.size === 0) {
+            return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
         }
-        showToast("Atribuição concluída!", "success");
-        selectedStudentsForAssign.clear();
-        await refreshData();
-        closeAssignRoomModal();
+
+        const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
+        if (!confirmacao) return;
+
+        showToast("Atualizando banco de dados...", "info");
+
+        // Converte o Set de IDs em uma lista para processar
+        const ids = Array.from(selectedStudentsForAssign);
+        
+        // Atualiza no Supabase todos os IDs selecionados
+        const { error } = await _supabase
+            .from('students')
+            .update({ [field]: value })
+            .in('id', ids);
+
+        if (error) {
+            console.error("Erro na atribuição:", error);
+            showToast("Erro ao atualizar alguns alunos.", "error");
+        } else {
+            showToast("Atualização concluída com sucesso!", "success");
+            selectedStudentsForAssign.clear();
+            await refreshData(); // Recarrega os dados para atualizar a tabela
+            closeAssignRoomModal();
+        }
     }
 
+    async function deleteAllStudents() {
+        const confirmar1 = confirm("⚠️ ATENÇÃO: Isso apagará TODOS os 2 mil alunos do sistema. Você tem certeza?");
+        if (!confirmar1) return;
+
+        const confirmar2 = confirm("ESTA AÇÃO NÃO PODE SER DESFEITA. Apagar tudo agora?");
+        if (!confirmar2) return;
+
+        showToast("Limpando banco de dados...", "info");
+
+        // O comando .delete().neq('id', 0) é um truque para apagar todas as linhas no Supabase
+        const { error } = await _supabase
+            .from('students')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); 
+
+        if (error) {
+            console.error(error);
+            showToast("Erro ao limpar banco.", "error");
+        } else {
+            // Também limpamos a frequência para não deixar dados órfãos
+            await _supabase.from('attendance').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            showToast("Sistema limpo com sucesso!", "success");
+            await refreshData();
+        }
+    }
     // --- AUXILIARES ---
     function applyFilters() {
         const sede = document.getElementById('filter-sede')?.value || 'todos';
@@ -482,14 +664,26 @@
         document.getElementById('student-modal').classList.remove('hidden');
     }
 
+    // Função para abrir o modal e carregar apenas os alunos que estão filtrados na tela
     function openAssignRoomModal() {
-        const list = document.getElementById('assign-list');
-        list.innerHTML = filteredStudents.map(s => `
-            <div class="flex items-center gap-2 text-white text-sm p-1 border-b border-slate-700">
-                <input type="checkbox" onchange="this.checked ? selectedStudentsForAssign.add('${s.id}') : selectedStudentsForAssign.delete('${s.id}')">
-                <span>${s.nome_aluno} (${s.nome_turma})</span>
-            </div>
-        `).join('');
+        const listCont = document.getElementById('assign-list');
+        if (!listCont) return;
+
+        selectedStudentsForAssign.clear(); // Limpa seleções anteriores
+
+        if (filteredStudents.length === 0) {
+            listCont.innerHTML = `<p class="text-slate-500 text-center py-4">Nenhum aluno filtrado para atribuir.</p>`;
+        } else {
+            listCont.innerHTML = filteredStudents.map(s => `
+                <div class="flex items-center gap-3 p-2 border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
+                    <input type="checkbox" 
+                           class="w-4 h-4 cursor-pointer" 
+                           onchange="this.checked ? selectedStudentsForAssign.add('${s.id}') : selectedStudentsForAssign.delete('${s.id}')">
+                    <span class="text-white text-sm">${s.nome_aluno} <span class="text-slate-500">(${s.nome_turma})</span></span>
+                </div>
+            `).join('');
+        }
+        
         document.getElementById('assign-room-modal').classList.remove('hidden');
     }
 
