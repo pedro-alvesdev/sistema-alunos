@@ -306,11 +306,14 @@
     }
 
    // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
-    function applyAttendanceFilters() {
+  function applyAttendanceFilters() {
         const s = document.getElementById('attendance-filter-sede')?.value || 'todos';
         const e = document.getElementById('attendance-filter-serie')?.value || 'todos';
         const t = document.getElementById('attendance-filter-turno')?.value || 'todos';
         const dKey = selectedDate.toISOString().split('T')[0];
+
+        // Atualiza dropdowns da frequência
+        updateFilterOptions('attendance', { sede: s, serie: e });
 
         const list = allStudents.filter(x => {
             const mSede = s === 'todos' || x.sede === s;
@@ -319,17 +322,15 @@
             return mSede && mSerie && mTurma;
         });
 
+        // ... restante do código de renderização da lista (mantenha o que você já tem abaixo)
         const countEl = document.getElementById('attendance-count');
         if (countEl) countEl.innerText = list.length;
-
         const cont = document.getElementById('attendance-list');
         if (!cont) return;
-
         if (list.length === 0) {
-            cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado para os filtros selecionados.</p>`;
+            cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado.</p>`;
             return;
         }
-
         cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(x => {
             const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
             const present = att ? att.presente : true;
@@ -587,6 +588,10 @@
         const parte = document.getElementById('filter-parte-sala')?.value || 'todos';
         const search = document.getElementById('search-nome')?.value.toLowerCase() || '';
 
+        // 1. Atualiza os dropdowns dinamicamente para encadeamento
+        updateFilterOptions('management', { sede, serie });
+
+        // 2. Filtra a lista principal
         filteredStudents = allStudents.filter(s => {
             const mSede = sede === 'todos' || s.sede === sede;
             const mSerie = serie === 'todos' || s.serie === serie;
@@ -599,6 +604,45 @@
             return mSede && mSerie && mTurma && mSearch && mParte;
         });
         renderStudentList();
+    }
+
+    function updateFilterOptions(ctx, currentFilters = {}) {
+        const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
+        
+        // Base de dados para os dropdowns (respeita o que já foi selecionado acima)
+        let baseParaDropdowns = allStudents;
+        if (currentFilters.sede && currentFilters.sede !== 'todos') {
+            baseParaDropdowns = baseParaDropdowns.filter(s => s.sede === currentFilters.sede);
+        }
+        if (currentFilters.serie && currentFilters.serie !== 'todos') {
+            baseParaDropdowns = baseParaDropdowns.filter(s => s.serie === currentFilters.serie);
+        }
+
+        const sedes = [...new Set(allStudents.map(s => s.sede))].sort(); // Sede sempre mostra todas
+        const series = [...new Set(baseParaDropdowns.map(s => s.serie))].sort();
+        const turmas = [...new Set(baseParaDropdowns.map(s => s.nome_turma))].sort();
+        
+        const populate = (id, list, selectedValue) => {
+            const el = document.getElementById(prefix + id);
+            if(el) {
+                const previousValue = selectedValue || el.value;
+                el.innerHTML = '<option value="todos">Todas</option>' + 
+                               list.map(x => `<option value="${x}">${x}</option>`).join('');
+                // Tenta manter o valor que estava selecionado
+                if (list.includes(previousValue)) el.value = previousValue;
+            }
+        };
+
+        if (ctx === 'management') {
+            populate('-sede', sedes, currentFilters.sede);
+            populate('-serie', series, currentFilters.serie);
+            populate('-turno', turmas, currentFilters.turma);
+        } else {
+            // Para frequência, a lógica é similar
+            populate('-sede', [...new Set(allStudents.map(s => s.sede))].sort());
+            populate('-serie', [...new Set(allStudents.map(s => s.serie))].sort());
+            populate('-turno', [...new Set(allStudents.map(s => s.nome_turma))].sort());
+        }
     }
 
     function renderStudentList() {
@@ -631,21 +675,7 @@
             </table>`;
     }
 
-    // (As funções de Filtros Dropdown, Calendário, Impressão e Modais seguem a lógica do original)
-    function updateFilterOptions(ctx) {
-        const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
-        const sedes = [...new Set(allStudents.map(s => s.sede))];
-        const series = [...new Set(allStudents.map(s => s.serie))];
-        const turmas = [...new Set(allStudents.map(s => s.nome_turma))];
-        
-        const populate = (id, list) => {
-            const el = document.getElementById(prefix + id);
-            if(el) el.innerHTML = '<option value="todos">Todas</option>' + list.map(x => `<option value="${x}">${x}</option>`).join('');
-        };
-        populate('-sede', sedes); populate('-serie', series); populate('-turno', turmas);
-    }
-
-    function openEditModal(ra) {
+       function openEditModal(ra) {
         const s = allStudents.find(x => x.ra === ra);
         document.getElementById('modal-title').innerText = "Editar Aluno";
         document.getElementById('m-nome').value = s.nome_aluno;
