@@ -67,7 +67,7 @@
     let isAuthenticated = false;
     let currentUser = 'admin';
     let currentScreen = 'management';
-    let selectedDate = new Date();
+    let selectedDate = new Date(new Date().setHours(0,0,0,0));
     let selectedStudentsForAssign = new Set();
     let importErrors = [];
 
@@ -157,14 +157,17 @@
     }
 
 async function updateDateFromPicker(val) {
-        if (val) {
-            // Usa T12:00:00 para evitar que o fuso horário mude o dia para ontem
-            selectedDate = new Date(val + 'T12:00:00');
-            showToast("Carregando data...", "info");
-            await refreshData(); 
-            renderAttendanceScreen();
-        }
+    if (val) {
+        // Criamos a data usando os componentes ano, mês e dia separadamente
+        // Isso garante que o navegador use o fuso horário local e não o UTC
+        const [ano, mes, dia] = val.split('-').map(Number);
+        selectedDate = new Date(ano, mes - 1, dia, 12, 0, 0); // Define meio-dia para evitar erros de virada de dia
+        
+        showToast("Carregando data...", "info");
+        await refreshData(); 
+        renderAttendanceScreen();
     }
+}
 
     // --- TELA: GERENCIAMENTO ---
     function renderManagementScreen() {
@@ -351,7 +354,9 @@ function applyAttendanceFilters() {
         const s = document.getElementById('attendance-filter-sede')?.value || 'todos';
         const e = document.getElementById('attendance-filter-serie')?.value || 'todos';
         const t = document.getElementById('attendance-filter-turno')?.value || 'todos';
-        const dKey = selectedDate.toISOString().split('T')[0];
+        const dKey = selectedDate.getFullYear() + '-' + 
+             String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
+             String(selectedDate.getDate()).padStart(2, '0');
 
         // 1. ATUALIZA OS DROPDOWNS (ENCADEAMENTO)
         // Passamos 'attendance' como contexto e os valores atuais para filtrar as opções
@@ -549,7 +554,9 @@ function applyAttendanceFilters() {
     }
 
   async function togglePresence(ra, val) {
-        const dKey = selectedDate.toISOString().split('T')[0];
+        const dKey = selectedDate.getFullYear() + '-' + 
+             String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
+             String(selectedDate.getDate()).padStart(2, '0');
         const student = allStudents.find(x => x.ra === ra);
         
         if (!student) return;
