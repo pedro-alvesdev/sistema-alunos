@@ -144,14 +144,14 @@
         else renderAttendanceScreen();
     }
 
-    function updateDateFromPicker(val) {
-        if (val) {
-            // Ajusta a data considerando o fuso horário local para não mudar o dia errado
-            const partes = val.split('-');
-            selectedDate = new Date(partes[0], partes[1] - 1, partes[2]);
-            renderAttendanceScreen();
-        }
+  function updateDateFromPicker(val) {
+    if (val) {
+        // O formato vindo do input é AAAA-MM-DD. 
+        // Adicionamos T12:00:00 para garantir que o fuso horário não mude o dia.
+        selectedDate = new Date(val + 'T12:00:00');
+        renderAttendanceScreen();
     }
+}
 
     // --- TELA: GERENCIAMENTO ---
     function renderManagementScreen() {
@@ -222,15 +222,16 @@
             ${renderNavigationHeader()}
             
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
+              <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
     <h2 class="text-white font-bold mb-4">📅 Data da Frequência</h2>
-    <div class="relative">
+    <div class="relative h-12">
         <input type="date" 
                id="date-input-picker" 
                value="${selectedDate.toISOString().split('T')[0]}"
                onchange="updateDateFromPicker(this.value)"
-               class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold text-center outline-none cursor-pointer appearance-none">
-        <div class="absolute inset-0 flex items-center justify-center pointer-events-none" id="date-label">
+               class="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer">
+        
+        <div class="absolute inset-0 bg-blue-600 text-white rounded-lg font-bold flex items-center justify-center">
              📅 ${selectedDate.toLocaleDateString('pt-BR')}
         </div>
     </div>
