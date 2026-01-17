@@ -144,14 +144,18 @@
         else renderAttendanceScreen();
     }
 
-  function updateDateFromPicker(val) {
-    if (val) {
-        // O formato vindo do input é AAAA-MM-DD. 
-        // Adicionamos T12:00:00 para garantir que o fuso horário não mude o dia.
-        selectedDate = new Date(val + 'T12:00:00');
-        renderAttendanceScreen();
+async function updateDateFromPicker(val) {
+        if (val) {
+            // Ajusta para o meio do dia para evitar problemas de fuso horário
+            selectedDate = new Date(val + 'T12:00:00');
+            
+            showToast("Carregando data...", "info");
+            
+            // Re-busca os dados do Supabase para saber quem faltou naquela data
+            await refreshData(); 
+            renderAttendanceScreen();
+        }
     }
-}
 
     // --- TELA: GERENCIAMENTO ---
     function renderManagementScreen() {
@@ -538,17 +542,37 @@ function applyAttendanceFilters() {
         }
     }
 
-    async function togglePresence(ra, val) {
-        const student = allStudents.find(s => s.ra === ra);
+  async function togglePresence(ra, val) {
         const dKey = selectedDate.toISOString().split('T')[0];
-        await _supabase.from('attendance').upsert({
-            ra: ra,
-            data_presenca: dKey,
-            presente: val,
-            nome_aluno: student.nome_aluno,
-            nome_turma: student.nome_turma,
+        const student = allStudents.find(x => x.ra === ra);
+        
+        if (!student) return;
+
+        // 1. Salva no Supabase (Banco de Dados)
+        const { error } = await _supabase.from('attendance').upsert({
+            ra: ra, 
+            data_presenca: dKey, 
+            presente: val, 
+            nome_aluno: student.nome_aluno, 
+            nome_turma: student.nome_turma, 
             usuario: currentUser
         }, { onConflict: 'ra,data_presenca' });
+
+        if (error) {
+            showToast("Erro ao salvar presença", "error");
+            console.error(error);
+        } else {
+            // 2. Sincroniza a memória local (allAttendances)
+            const index = allAttendances.findIndex(a => a.ra === ra && a.data_presenca === dKey);
+            
+            if (index !== -1) {
+                allAttendances[index].presente = val;
+            } else {
+                allAttendances.push({ ra, data_presenca: dKey, presente: val });
+            }
+            
+            showToast(val ? "Presente" : "Ausente", "success");
+        }
     }
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
