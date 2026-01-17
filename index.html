@@ -35,6 +35,18 @@
     /* Estilo para barra de rolagem mais bonita no celular */
     .custom-scrollbar::-webkit-scrollbar { height: 6px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    /* Remove preenchimentos laterais em telas pequenas para ganhar espaço */
+    @media (max-width: 640px) {
+        .min-h-full { padding: 12px 8px !important; }
+        .rounded-xl { padding-left: 8px !important; padding-right: 8px !important; }
+        td, th { padding-left: 4px !important; padding-right: 4px !important; font-size: 13px !important; }
+    }
+
+    /* Força a tabela a usar 100% da largura disponível */
+    #student-list table {
+        width: 98%;
+        table-layout: auto;
+    }
   </style>
 </head>
 <body class="h-full">
@@ -205,9 +217,9 @@ async function updateDateFromPicker(val) {
     <button onclick="deleteAllStudents()" class="bg-red-900/50 text-red-200 border border-red-800 px-4 py-2 rounded-lg text-sm hover:bg-red-800 transition-all col-span-2 sm:col-span-1">🗑️ Limpar Tudo</button>
 </div>
               </div>
-              <div class="bg-slate-900/30 rounded-lg border border-slate-700 overflow-hidden">
-    <div id="student-list" class="overflow-x-auto custom-scrollbar"></div>
-            </div>
+             <div class="bg-slate-900/30 rounded-lg border-y border-slate-700 sm:border-x">
+    <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
+</div>
           </div>
         </div>
         ${renderModals()}
@@ -249,8 +261,8 @@ async function updateDateFromPicker(val) {
                 </div>
             </div>
 
-            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
-              <div class="flex justify-between items-center mb-6">
+            <div class="bg-slate-900 p-3 sm:p-4 rounded-xl border border-slate-700 flex justify-between items-center gap-2">
+        
                 <h2 class="text-white font-bold text-xl">✅ Lista de Frequência (<span id="attendance-count">0</span>)</h2>
                 <button onclick="printAttendanceList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">🖨️ Imprimir Lista</button>
               </div>
