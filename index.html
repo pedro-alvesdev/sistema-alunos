@@ -215,7 +215,9 @@
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
                     <h2 class="text-white font-bold mb-4">📅 Data da Frequência</h2>
-                    <button onclick="openCalendarPopup()" class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold">📅 ${formatDate(selectedDate)}</button>
+                    <button onclick="openCalendarPopup()" class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold">
+    📅 ${selectedDate.toLocaleDateString('pt-BR')}
+</button>
                 </div>
                 <div class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700">
                     <h2 class="text-white font-bold mb-4">🔍 Filtrar Turma</h2>
@@ -316,15 +318,18 @@
     }
 
    // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
-  function applyAttendanceFilters() {
+function applyAttendanceFilters() {
+        // Captura os valores selecionados nos filtros da frequência
         const s = document.getElementById('attendance-filter-sede')?.value || 'todos';
         const e = document.getElementById('attendance-filter-serie')?.value || 'todos';
         const t = document.getElementById('attendance-filter-turno')?.value || 'todos';
         const dKey = selectedDate.toISOString().split('T')[0];
 
-        // Atualiza dropdowns da frequência
-        updateFilterOptions('attendance', { sede: s, serie: e });
+        // 1. ATUALIZA OS DROPDOWNS (ENCADEAMENTO)
+        // Passamos 'attendance' como contexto e os valores atuais para filtrar as opções
+        updateFilterOptions('attendance', { sede: s, serie: e, turma: t });
 
+        // 2. FILTRA A LISTA DE ALUNOS QUE SERÁ EXIBIDA
         const list = allStudents.filter(x => {
             const mSede = s === 'todos' || x.sede === s;
             const mSerie = e === 'todos' || x.serie === e;
@@ -332,15 +337,18 @@
             return mSede && mSerie && mTurma;
         });
 
-        // ... restante do código de renderização da lista (mantenha o que você já tem abaixo)
         const countEl = document.getElementById('attendance-count');
         if (countEl) countEl.innerText = list.length;
+
         const cont = document.getElementById('attendance-list');
         if (!cont) return;
+
         if (list.length === 0) {
-            cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado.</p>`;
+            cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado para os filtros selecionados.</p>`;
             return;
         }
+
+        // 3. RENDERIZA A LISTA NA TELA
         cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(x => {
             const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
             const present = att ? att.presente : true;
@@ -348,7 +356,7 @@
                 <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                     <div>
                         <p class="text-white font-bold">${x.nome_aluno}</p>
-                        <p class="text-slate-500 text-xs">${x.nome_turma} | RA: ${x.ra}</p>
+                        <p class="text-slate-500 text-xs">${x.nome_turma} | Lado: ${x.parte_sala || '-'}</p>
                     </div>
                     <label class="switch">
                         <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
@@ -445,12 +453,31 @@
         win.document.close();
     }
 
-    function openCalendarPopup() {
-        // Como estamos usando milhares de registros, vamos usar o seletor nativo para simplificar
-        const novaData = prompt("Digite a data (AAAA-MM-DD):", selectedDate.toISOString().split('T')[0]);
-        if (novaData) {
-            selectedDate = new Date(novaData);
-            renderAttendanceScreen();
+  function openCalendarPopup() {
+        // Criamos um input de data invisível que clica automaticamente
+        const dateInput = document.createElement('input');
+        dateInput.type = 'date';
+        dateInput.style.position = 'fixed';
+        dateInput.style.opacity = '0';
+        
+        // Define o valor atual no calendário ao abrir
+        dateInput.value = selectedDate.toISOString().split('T')[0];
+        
+        dateInput.onchange = (e) => {
+            if (e.target.value) {
+                selectedDate = new Date(e.target.value + 'T00:00:00');
+                renderAttendanceScreen();
+            }
+            document.body.removeChild(dateInput);
+        };
+
+        document.body.appendChild(dateInput);
+        
+        // Abre o calendário nativo do sistema/navegador
+        if ('showPicker' in HTMLInputElement.prototype) {
+            dateInput.showPicker();
+        } else {
+            dateInput.click();
         }
     }
     
