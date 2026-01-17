@@ -144,6 +144,15 @@
         else renderAttendanceScreen();
     }
 
+    function updateDateFromPicker(val) {
+        if (val) {
+            // Ajusta a data considerando o fuso horário local para não mudar o dia errado
+            const partes = val.split('-');
+            selectedDate = new Date(partes[0], partes[1] - 1, partes[2]);
+            renderAttendanceScreen();
+        }
+    }
+
     // --- TELA: GERENCIAMENTO ---
     function renderManagementScreen() {
       const config = defaultConfig;
@@ -214,10 +223,18 @@
             
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                 <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
-                    <h2 class="text-white font-bold mb-4">📅 Data da Frequência</h2>
-                    <button onclick="openCalendarPopup()" class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold">
-    📅 ${selectedDate.toLocaleDateString('pt-BR')}
-</button>
+    <h2 class="text-white font-bold mb-4">📅 Data da Frequência</h2>
+    <div class="relative">
+        <input type="date" 
+               id="date-input-picker" 
+               value="${selectedDate.toISOString().split('T')[0]}"
+               onchange="updateDateFromPicker(this.value)"
+               class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold text-center outline-none cursor-pointer appearance-none">
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none" id="date-label">
+             📅 ${selectedDate.toLocaleDateString('pt-BR')}
+        </div>
+    </div>
+</div>
                 </div>
                 <div class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700">
                     <h2 class="text-white font-bold mb-4">🔍 Filtrar Turma</h2>
@@ -453,34 +470,6 @@ function applyAttendanceFilters() {
         win.document.close();
     }
 
-  function openCalendarPopup() {
-        // Criamos um input de data invisível que clica automaticamente
-        const dateInput = document.createElement('input');
-        dateInput.type = 'date';
-        dateInput.style.position = 'fixed';
-        dateInput.style.opacity = '0';
-        
-        // Define o valor atual no calendário ao abrir
-        dateInput.value = selectedDate.toISOString().split('T')[0];
-        
-        dateInput.onchange = (e) => {
-            if (e.target.value) {
-                selectedDate = new Date(e.target.value + 'T00:00:00');
-                renderAttendanceScreen();
-            }
-            document.body.removeChild(dateInput);
-        };
-
-        document.body.appendChild(dateInput);
-        
-        // Abre o calendário nativo do sistema/navegador
-        if ('showPicker' in HTMLInputElement.prototype) {
-            dateInput.showPicker();
-        } else {
-            dateInput.click();
-        }
-    }
-    
     // --- LÓGICA DE NEGÓCIO (SUPABASE) ---
 
     async function handleExcelUpload() {
