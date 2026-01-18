@@ -393,21 +393,20 @@ async function updateDateFromPicker(val) {
 
    // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
 function applyAttendanceFilters() {
-    // Captura os valores selecionados
+    // 1. Captura os valores selecionados nos filtros da frequência
     const s = document.getElementById('attendance-filter-sede')?.value || 'todos';
     const e = document.getElementById('attendance-filter-serie')?.value || 'todos';
     const t = document.getElementById('attendance-filter-turno')?.value || 'todos';
     
-    // ATUALIZA OS DROPDOWNS (ENCADEAMENTO)
-    // Agora passa os filtros atuais para restringir as opções dos próximos selects
-    updateFilterOptions('attendance', { sede: s, serie: e, turma: t });
-
-    // ... restante da função (formatação da data e listagem de alunos)
+    // 2. Formata a data para a busca (YYYY-MM-DD)
     const dKey = selectedDate.getFullYear() + '-' + 
                  String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
                  String(selectedDate.getDate()).padStart(2, '0');
-    
-    // Continua a filtragem da lista...
+
+    // 3. ATUALIZA OS DROPDOWNS (ENCADEAMENTO)
+    updateFilterOptions('attendance', { sede: s, serie: e, turma: t });
+
+    // 4. FILTRA A LISTA DE ALUNOS QUE SERÁ EXIBIDA
     const list = allStudents.filter(x => {
         const mSede = s === 'todos' || x.sede === s;
         const mSerie = e === 'todos' || x.serie === e;
@@ -415,34 +414,34 @@ function applyAttendanceFilters() {
         return mSede && mSerie && mTurma;
     });
 
-        const countEl = document.getElementById('attendance-count');
-        if (countEl) countEl.innerText = list.length;
+    const countEl = document.getElementById('attendance-count');
+    if (countEl) countEl.innerText = list.length;
 
-        const cont = document.getElementById('attendance-list');
-        if (!cont) return;
+    const cont = document.getElementById('attendance-list');
+    if (!cont) return;
 
-        if (list.length === 0) {
-            cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado para os filtros selecionados.</p>`;
-            return;
-        }
-
-        // 3. RENDERIZA A LISTA NA TELA
-        cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(x => {
-            const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
-            const present = att ? att.presente : true;
-            return `
-                <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
-                    <div>
-                        <p class="text-white font-bold">${x.nome_aluno}</p>
-                        <p class="text-slate-500 text-xs">${x.nome_turma} | Lado: ${x.parte_sala || '-'}</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
-                </div>`;
-        }).join('');
+    if (list.length === 0) {
+        cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado para os filtros selecionados.</p>`;
+        return;
     }
+
+    // 5. RENDERIZA A LISTA NA TELA
+    cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(x => {
+        const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
+        const present = att ? att.presente : true;
+        return `
+            <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                <div>
+                    <p class="text-white font-bold">${x.nome_aluno}</p>
+                    <p class="text-slate-500 text-xs">${x.nome_turma} | Lado: ${x.parte_sala || '-'}</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </div>`;
+    }).join('');
+}
 
     // --- FUNÇÕES DE IMPRESSÃO ---
     function printStudentList() {
