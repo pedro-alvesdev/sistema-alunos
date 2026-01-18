@@ -734,54 +734,42 @@ function applyAttendanceFilters() {
     }
 
    function updateFilterOptions(ctx, currentFilters = {}) {
-    const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
-    
-    // Base de dados para os dropdowns (respeita o encadeamento)
-    let baseParaDropdowns = allStudents;
-    
-    // Se uma sede foi selecionada, as séries devem ser apenas daquela sede
-    if (currentFilters.sede && currentFilters.sede !== 'todos') {
-        baseParaDropdowns = baseParaDropdowns.filter(s => s.sede === currentFilters.sede);
-    }
-    
-    // Se uma série foi selecionada, as turmas devem ser apenas daquela série
-    if (currentFilters.serie && currentFilters.serie !== 'todos') {
-        baseParaDropdowns = baseParaDropdowns.filter(s => s.serie === currentFilters.serie);
-    }
-
-    const sedes = [...new Set(allStudents.map(s => s.sede))].sort(); 
-    const series = [...new Set(baseParaDropdowns.map(s => s.serie))].sort();
-    const turmas = [...new Set(baseParaDropdowns.map(s => s.nome_turma))].sort();
-    
-    const populate = (id, list, selectedValue) => {
-        const el = document.getElementById(prefix + id);
-        if(el) {
-            const previousValue = selectedValue || el.value;
-            el.innerHTML = '<option value="todos">Todas</option>' + 
-                           list.map(x => `<option value="${x}">${x}</option>`).join('');
-            
-            // Mantém o valor se ele ainda existir na nova lista filtrada
-            if (list.includes(previousValue)) el.value = previousValue;
-            else el.value = 'todos';
+        const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
+        
+        // Base de dados para os dropdowns (respeita o encadeamento)
+        let baseParaDropdowns = allStudents;
+        
+        // Se uma sede foi selecionada, as séries devem ser apenas daquela sede
+        if (currentFilters.sede && currentFilters.sede !== 'todos') {
+            baseParaDropdowns = baseParaDropdowns.filter(s => s.sede === currentFilters.sede);
         }
-    };
-
-    // Aplica a filtragem nos selects de acordo com o contexto
-    populate('-sede', sedes, currentFilters.sede);
-    populate('-serie', series, currentFilters.serie);
-    populate('-turno', turmas, currentFilters.turma);
-}
-
-        if (ctx === 'management') {
-            populate('-sede', sedes, currentFilters.sede);
-            populate('-serie', series, currentFilters.serie);
-            populate('-turno', turmas, currentFilters.turma);
-        } else {
-            // Para frequência, a lógica é similar
-            populate('-sede', [...new Set(allStudents.map(s => s.sede))].sort());
-            populate('-serie', [...new Set(allStudents.map(s => s.serie))].sort());
-            populate('-turno', [...new Set(allStudents.map(s => s.nome_turma))].sort());
+        
+        // Se uma série foi selecionada, as turmas devem ser apenas daquela série
+        if (currentFilters.serie && currentFilters.serie !== 'todos') {
+            baseParaDropdowns = baseParaDropdowns.filter(s => s.serie === currentFilters.serie);
         }
+
+        const sedes = [...new Set(allStudents.map(s => s.sede))].sort(); 
+        const series = [...new Set(baseParaDropdowns.map(s => s.serie))].sort();
+        const turmas = [...new Set(baseParaDropdowns.map(s => s.nome_turma))].sort();
+        
+        const populate = (id, list, selectedValue) => {
+            const el = document.getElementById(prefix + id);
+            if(el) {
+                const previousValue = selectedValue || el.value;
+                el.innerHTML = '<option value="todos">Todas</option>' + 
+                               list.map(x => `<option value="${x}">${x}</option>`).join('');
+                
+                // Mantém o valor se ele ainda existir na nova lista filtrada
+                if (list.includes(previousValue)) el.value = previousValue;
+                else el.value = 'todos';
+            }
+        };
+
+        // Aplica a filtragem nos selects de acordo com o contexto
+        populate('-sede', sedes, currentFilters.sede);
+        populate('-serie', series, currentFilters.serie);
+        populate('-turno', turmas, currentFilters.turma);
     }
 
    function renderStudentList() {
