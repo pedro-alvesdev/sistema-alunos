@@ -84,11 +84,26 @@
     };
 
     // --- CARREGAMENTO DE DADOS ---
+  // --- CARREGAMENTO DE DADOS (COM LIMITE EXPANDIDO) ---
     async function refreshData() {
-        const { data: st } = await _supabase.from('students').select('*');
-        const { data: at } = await _supabase.from('attendance').select('*');
+        // Buscamos até 5000 alunos para garantir que todos os 1800 apareçam
+        const { data: st, error: errSt } = await _supabase
+            .from('students')
+            .select('*')
+            .range(0, 4999); 
+            
+        // Buscamos a frequência (também com limite expandido para não perder registros)
+        const { data: at, error: errAt } = await _supabase
+            .from('attendance')
+            .select('*')
+            .range(0, 4999);
+
+        if (errSt) console.error("Erro ao buscar alunos:", errSt);
+        if (errAt) console.error("Erro ao buscar frequência:", errAt);
+
         allStudents = st || [];
         allAttendances = at || [];
+
         if(currentScreen === 'management') applyFilters();
         else applyAttendanceFilters();
     }
