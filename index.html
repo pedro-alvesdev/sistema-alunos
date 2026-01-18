@@ -84,28 +84,39 @@
     };
 
     // --- CARREGAMENTO DE DADOS ---
-  // --- CARREGAMENTO DE DADOS (COM LIMITE EXPANDIDO) ---
-    async function refreshData() {
-        // Buscamos até 5000 alunos para garantir que todos os 1800 apareçam
+async function refreshData() {
+        showToast("Carregando banco de dados...", "info");
+        
+        // 1. Buscamos Alunos usando um limite bem alto (ex: 5000)
+        // O comando .select('*', { count: 'exact' }) ajuda a trazer o volume real
         const { data: st, error: errSt } = await _supabase
             .from('students')
             .select('*')
-            .range(0, 4999); 
+            .limit(5000); 
             
-        // Buscamos a frequência (também com limite expandido para não perder registros)
+        // 2. Buscamos a frequência também com limite expandido
         const { data: at, error: errAt } = await _supabase
             .from('attendance')
             .select('*')
-            .range(0, 4999);
+            .limit(5000);
 
-        if (errSt) console.error("Erro ao buscar alunos:", errSt);
-        if (errAt) console.error("Erro ao buscar frequência:", errAt);
+        if (errSt) {
+            console.error("Erro alunos:", errSt);
+            showToast("Erro ao carregar alunos", "error");
+        }
+        if (errAt) console.error("Erro frequência:", errAt);
 
         allStudents = st || [];
         allAttendances = at || [];
 
-        if(currentScreen === 'management') applyFilters();
-        else applyAttendanceFilters();
+        // Atualiza a tela correspondente
+        if(currentScreen === 'management') {
+            updateFilterOptions('management');
+            applyFilters();
+        } else {
+            updateFilterOptions('attendance');
+            applyAttendanceFilters();
+        }
     }
 
     // --- INTERFACE: LOGIN ---
