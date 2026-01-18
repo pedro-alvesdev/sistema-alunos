@@ -181,7 +181,29 @@ async function refreshData() {
     }
 };
 
-    // --- INTERFACE: HEADER & NAVEGAÇÃO ---
+    async function deleteStudent(studentId) {
+  const confirmDelete = confirm('Tem certeza que deseja excluir este aluno?');
+  if (!confirmDelete) return;
+
+  try {
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', studentId);
+
+    if (error) throw error;
+
+    // Atualiza os dados e a tela
+    await refreshData();
+    applyFilters();
+
+  } catch (err) {
+    console.error(err);
+    alert('Erro ao excluir o aluno.');
+  }
+}
+
+           // --- INTERFACE: HEADER & NAVEGAÇÃO ---
     function renderNavigationHeader() {
       const config = defaultConfig;
       return `
