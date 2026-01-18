@@ -829,70 +829,55 @@ function applyAttendanceFilters() {
             </table>`;
     }
 
-       function openEditModal(ra) {
-        const s = allStudents.find(x => x.ra === ra);
-        document.getElementById('modal-title').innerText = "Editar Aluno";
-        document.getElementById('m-nome').value = s.nome_aluno;
-        document.getElementById('m-ra').value = s.ra;
-        document.getElementById('m-sede').value = s.sede;
-        document.getElementById('m-serie').value = s.serie;
-        document.getElementById('m-turma').value = s.nome_turma;
-        document.getElementById('m-parte').value = s.parte_sala || '';
-        document.getElementById('m-grupo').value = s.grupo || '';
-        document.getElementById('student-modal').classList.remove('hidden');
-    }
+       // --- FUNÇÕES DE INTERAÇÃO COM MODAIS ---
+    function openEditModal(ra) {
+        const s = allStudents.find(x => x.ra === ra);
+        if(!s) return;
+        document.getElementById('modal-title').innerText = "Editar Aluno";
+        document.getElementById('m-nome').value = s.nome_aluno;
+        document.getElementById('m-ra').value = s.ra;
+        document.getElementById('m-sede').value = s.sede;
+        document.getElementById('m-serie').value = s.serie;
+        document.getElementById('m-turma').value = s.nome_turma;
+        document.getElementById('m-parte').value = s.parte_sala || '';
+        document.getElementById('m-grupo').value = s.grupo || '';
+        document.getElementById('student-modal').classList.remove('hidden');
+        
+        // Atribui o evento de salvar ao formulário
+        document.getElementById('student-form').onsubmit = handleStudentSubmit;
+    }
 
-    function openAddModal() {
-        document.getElementById('modal-title').innerText = "Adicionar Aluno";
-        document.getElementById('student-form').reset();
-        document.getElementById('student-modal').classList.remove('hidden');
-    }
+    function openAddModal() {
+        document.getElementById('modal-title').innerText = "Adicionar Aluno";
+        document.getElementById('student-form').reset();
+        document.getElementById('student-modal').classList.remove('hidden');
+        
+        // Atribui o evento de salvar ao formulário
+        document.getElementById('student-form').onsubmit = handleStudentSubmit;
+    }
 
-    // Função para abrir o modal e carregar apenas os alunos que estão filtrados na tela
-    function openAssignRoomModal() {
-        const listCont = document.getElementById('assign-list');
-        if (!listCont) return;
+    // --- INICIALIZAÇÃO E UTILITÁRIOS ---
+    window.onload = () => {
+        if(sessionStorage.getItem('isAuth') === 'true') {
+            isAuthenticated = true;
+            refreshData().then(() => renderManagementScreen());
+        } else {
+            showLoginScreen();
+        }
+    };
 
-        selectedStudentsForAssign.clear(); // Limpa seleções anteriores
-
-        if (filteredStudents.length === 0) {
-            listCont.innerHTML = `<p class="text-slate-500 text-center py-4">Nenhum aluno filtrado para atribuir.</p>`;
-        } else {
-            listCont.innerHTML = filteredStudents.map(s => `
-                <div class="flex items-center gap-3 p-2 border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
-                    <input type="checkbox" 
-                           class="w-4 h-4 cursor-pointer" 
-                           onchange="this.checked ? selectedStudentsForAssign.add('${s.id}') : selectedStudentsForAssign.delete('${s.id}')">
-                    <span class="text-white text-sm">${s.nome_aluno} <span class="text-slate-500">(${s.nome_turma})</span></span>
-                </div>
-            `).join('');
-        }
-        
-        document.getElementById('assign-room-modal').classList.remove('hidden');
-    }
-
-    // --- INICIALIZAÇÃO ---
-    window.onload = () => {
-        if(sessionStorage.getItem('isAuth') === 'true') {
-            isAuthenticated = true;
-            refreshData().then(() => renderManagementScreen());
-        } else {
-            showLoginScreen();
-        }
-    };
-
-    // (Funções de utilidade como formatDate, handleLogout, close modals seguem o padrão)
-    function formatDate(d) { return d.toLocaleDateString('pt-BR'); }
-    function closeStudentModal() { document.getElementById('student-modal').classList.add('hidden'); }
-    function closeAssignRoomModal() { document.getElementById('assign-room-modal').classList.add('hidden'); }
-    function handleLogout() { sessionStorage.clear(); location.reload(); }
-    function showToast(m, t) { 
-        const toast = document.createElement('div');
-        toast.className = `toast ${t === 'success' ? 'bg-green-600' : 'bg-blue-600'}`;
-        toast.innerText = m;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
-    }
+    function formatDate(d) { return d.toLocaleDateString('pt-BR'); }
+    function closeStudentModal() { document.getElementById('student-modal').classList.add('hidden'); }
+    function closeAssignRoomModal() { document.getElementById('assign-room-modal').classList.add('hidden'); }
+    function handleLogout() { sessionStorage.clear(); location.reload(); }
+    
+    function showToast(m, t) { 
+        const toast = document.createElement('div');
+        toast.className = `toast ${t === 'success' ? 'bg-green-600' : 'bg-blue-600'}`;
+        toast.innerText = m;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
   </script>
 </body>
 </html>
