@@ -226,6 +226,7 @@ async function updateDateFromPicker(val) {
         <div class="min-h-full p-4 md:p-8">
           <div class="max-w-7xl mx-auto">
             ${renderNavigationHeader()}
+            
 
             <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
               <h2 class="font-semibold mb-4 text-white text-xl">📊 Importar Planilha Excel</h2>
@@ -271,6 +272,7 @@ async function updateDateFromPicker(val) {
         </div>
         ${renderModals()}
       `;
+      document.getElementById('student-form').onsubmit = handleStudentSubmit;
       updateFilterOptions('management');
       renderStudentList();
     }
@@ -386,7 +388,7 @@ async function updateDateFromPicker(val) {
                         <p class="text-white text-sm mb-2">Definir Grupo:</p>
                         <div class="flex gap-2">
                             <input id="mass-group-val" type="number" class="w-20 p-2 bg-slate-900 text-white rounded" placeholder="Ex: 1">
-                            <button onclick="onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
+                           <button onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
                         </div>
                     </div>
                 </div>
