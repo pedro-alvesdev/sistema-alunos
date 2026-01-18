@@ -687,6 +687,25 @@ function applyAttendanceFilters() {
             await refreshData();
         }
     }
+   
+    function clearFilters() {
+        const sede = document.getElementById('filter-sede');
+        const serie = document.getElementById('filter-serie');
+        const turno = document.getElementById('filter-turno');
+        const parte = document.getElementById('filter-parte-sala');
+        const busca = document.getElementById('search-nome');
+
+        if(sede) sede.value = 'todos';
+        if(serie) serie.value = 'todos';
+        if(turno) turno.value = 'todos';
+        if(parte) parte.value = 'todos';
+        if(busca) busca.value = '';
+
+        updateFilterOptions('management', { sede: 'todos', serie: 'todos' });
+        applyFilters();
+        showToast("Filtros limpos", "success");
+    }
+    
     // --- AUXILIARES ---
     function applyFilters() {
         const sede = document.getElementById('filter-sede')?.value || 'todos';
