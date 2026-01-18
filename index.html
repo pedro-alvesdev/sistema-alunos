@@ -84,28 +84,56 @@
     };
 
     // --- CARREGAMENTO DE DADOS ---
-  // --- CARREGAMENTO DE DADOS (COM LIMITE EXPANDIDO) ---
-    async function refreshData() {
-        // Buscamos até 5000 alunos para garantir que todos os 1800 apareçam
-        const { data: st, error: errSt } = await _supabase
-            .from('students')
-            .select('*')
-            .range(0, 4999); 
+async function refreshData() {
+        showToast("Carregando banco de dados completo...", "info");
+        
+        let allFetchedStudents = [];
+        let lastCount = 0;
+        let page = 0;
+        const pageSize = 1000;
+
+        // Loop para buscar todos os alunos em blocos de 1000 (contorna o limite do servidor)
+        do {
+            const { data, error } = await _supabase
+                .from('students')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (error) {
+                console.error("Erro ao carregar bloco de alunos:", error);
+                break;
+            }
+
+            allFetchedStudents = allFetchedStudents.concat(data);
+            lastCount = data.length;
+            page++;
+        } while (lastCount === pageSize); // Se o bloco veio cheio, busca o próximo
+
+        // Busca a frequência (também em blocos, para garantir)
+        let allFetchedAttendance = [];
+        page = 0;
+        do {
+            const { data, error } = await _supabase
+                .from('attendance')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
             
-        // Buscamos a frequência (também com limite expandido para não perder registros)
-        const { data: at, error: errAt } = await _supabase
-            .from('attendance')
-            .select('*')
-            .range(0, 4999);
+            if (error) break;
+            allFetchedAttendance = allFetchedAttendance.concat(data);
+            lastCount = data.length;
+            page++;
+        } while (lastCount === pageSize);
 
-        if (errSt) console.error("Erro ao buscar alunos:", errSt);
-        if (errAt) console.error("Erro ao buscar frequência:", errAt);
+        allStudents = allFetchedStudents;
+        allAttendances = allFetchedAttendance;
 
-        allStudents = st || [];
-        allAttendances = at || [];
-
-        if(currentScreen === 'management') applyFilters();
-        else applyAttendanceFilters();
+        if (currentScreen === 'management') {
+            updateFilterOptions('management');
+            applyFilters();
+        } else {
+            updateFilterOptions('attendance');
+            applyAttendanceFilters();
+        }
     }
 
     // --- INTERFACE: LOGIN ---
@@ -659,6 +687,25 @@ function applyAttendanceFilters() {
             await refreshData();
         }
     }
+   
+    function clearFilters() {
+        const sede = document.getElementById('filter-sede');
+        const serie = document.getElementById('filter-serie');
+        const turno = document.getElementById('filter-turno');
+        const parte = document.getElementById('filter-parte-sala');
+        const busca = document.getElementById('search-nome');
+
+        if(sede) sede.value = 'todos';
+        if(serie) serie.value = 'todos';
+        if(turno) turno.value = 'todos';
+        if(parte) parte.value = 'todos';
+        if(busca) busca.value = '';
+
+        updateFilterOptions('management', { sede: 'todos', serie: 'todos' });
+        applyFilters();
+        showToast("Filtros limpos", "success");
+    }
+    
     // --- AUXILIARES ---
     function applyFilters() {
         const sede = document.getElementById('filter-sede')?.value || 'todos';
