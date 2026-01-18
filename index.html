@@ -85,32 +85,49 @@
 
     // --- CARREGAMENTO DE DADOS ---
 async function refreshData() {
-        showToast("Carregando banco de dados...", "info");
+        showToast("Carregando banco de dados completo...", "info");
         
-        // 1. Buscamos Alunos usando um limite bem alto (ex: 5000)
-        // O comando .select('*', { count: 'exact' }) ajuda a trazer o volume real
-        const { data: st, error: errSt } = await _supabase
-            .from('students')
-            .select('*')
-            .limit(5000); 
+        let allFetchedStudents = [];
+        let lastCount = 0;
+        let page = 0;
+        const pageSize = 1000;
+
+        // Loop para buscar todos os alunos em blocos de 1000 (contorna o limite do servidor)
+        do {
+            const { data, error } = await _supabase
+                .from('students')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (error) {
+                console.error("Erro ao carregar bloco de alunos:", error);
+                break;
+            }
+
+            allFetchedStudents = allFetchedStudents.concat(data);
+            lastCount = data.length;
+            page++;
+        } while (lastCount === pageSize); // Se o bloco veio cheio, busca o próximo
+
+        // Busca a frequência (também em blocos, para garantir)
+        let allFetchedAttendance = [];
+        page = 0;
+        do {
+            const { data, error } = await _supabase
+                .from('attendance')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
             
-        // 2. Buscamos a frequência também com limite expandido
-        const { data: at, error: errAt } = await _supabase
-            .from('attendance')
-            .select('*')
-            .limit(5000);
+            if (error) break;
+            allFetchedAttendance = allFetchedAttendance.concat(data);
+            lastCount = data.length;
+            page++;
+        } while (lastCount === pageSize);
 
-        if (errSt) {
-            console.error("Erro alunos:", errSt);
-            showToast("Erro ao carregar alunos", "error");
-        }
-        if (errAt) console.error("Erro frequência:", errAt);
+        allStudents = allFetchedStudents;
+        allAttendances = allFetchedAttendance;
 
-        allStudents = st || [];
-        allAttendances = at || [];
-
-        // Atualiza a tela correspondente
-        if(currentScreen === 'management') {
+        if (currentScreen === 'management') {
             updateFilterOptions('management');
             applyFilters();
         } else {
