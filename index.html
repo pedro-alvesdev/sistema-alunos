@@ -186,7 +186,7 @@ async function refreshData() {
   if (!confirmDelete) return;
 
   try {
-    const { error } = await supabase
+    const { error } = await _supabase
       .from('students')
       .delete()
       .eq('id', studentId);
