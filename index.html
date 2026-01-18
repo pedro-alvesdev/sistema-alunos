@@ -388,7 +388,7 @@ async function updateDateFromPicker(val) {
                         <p class="text-white text-sm mb-2">Definir Grupo:</p>
                         <div class="flex gap-2">
                             <input id="mass-group-val" type="number" class="w-20 p-2 bg-slate-900 text-white rounded" placeholder="Ex: 1">
-                           <button onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
+                            <button onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
                         </div>
                     </div>
                 </div>
@@ -396,7 +396,6 @@ async function updateDateFromPicker(val) {
             </div>
         </div>`;
     }
-
    // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
 function applyAttendanceFilters() {
         // Captura os valores selecionados nos filtros da frequência
@@ -691,6 +690,25 @@ function applyAttendanceFilters() {
             await _supabase.from('attendance').delete().neq('id', '00000000-0000-0000-0000-000000000000');
             showToast("Sistema limpo com sucesso!", "success");
             await refreshData();
+        }
+    }
+
+      // Função para deletar um aluno individualmente
+    async function deleteStudent(id) {
+        if (!confirm("Tem certeza que deseja excluir este aluno?")) return;
+
+        showToast("Removendo...", "info");
+        const { error } = await _supabase
+            .from('students')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error("Erro ao deletar:", error);
+            showToast("Erro ao excluir aluno.", "error");
+        } else {
+            showToast("Aluno removido com sucesso!", "success");
+            await refreshData(); // Recarrega a lista para sumir o aluno da tela
         }
     }
    
