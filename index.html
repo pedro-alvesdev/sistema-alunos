@@ -351,18 +351,26 @@ async function updateDateFromPicker(val) {
             <div class="bg-slate-800 p-8 rounded-2xl w-full max-w-2xl border border-slate-600 text-white">
                 <h3 id="modal-title" class="text-2xl font-bold mb-6">Adicionar Aluno</h3>
                 <form id="student-form" class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2"><label class="text-xs">Nome Completo</label><input id="m-nome" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
-                    <div><label class="text-xs">RA</label><input id="m-ra" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
-                    <div><label class="text-xs">Sede</label><input id="m-sede" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
-                    <div><label class="text-xs">Série</label><input id="m-serie" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
-                    <div><label class="text-xs">Turma</label><input id="m-turma" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
-                    <div><label class="text-xs">Lado (A/B)</label><select id="m-parte" class="w-full p-2 bg-slate-900 rounded border border-slate-600"><option value="">Nenhum</option><option value="A">A</option><option value="B">B</option></select></div>
-                    <div><label class="text-xs">Grupo</label><input id="m-grupo" type="number" class="w-full p-2 bg-slate-900 rounded border border-slate-600"></div>
-                    <div class="col-span-2 flex gap-2 mt-4">
-                        <button type="submit" class="flex-1 bg-blue-600 py-3 rounded-lg font-bold">SALVAR</button>
-                        <button type="button" onclick="closeStudentModal()" class="flex-1 bg-slate-700 py-3 rounded-lg">CANCELAR</button>
-                    </div>
-                </form>
+    <div class="col-span-2"><label class="text-xs">Nome Completo</label><input id="m-nome" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
+    <div class="col-span-2 sm:col-span-1"><label class="text-xs">RA</label><input id="m-ra" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
+    
+    <div><label class="text-xs">Sede</label>
+        <select id="m-sede" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></select>
+    </div>
+    <div><label class="text-xs">Série</label>
+        <select id="m-serie" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></select>
+    </div>
+    <div><label class="text-xs">Turma</label>
+        <select id="m-turma" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></select>
+    </div>
+
+    <div><label class="text-xs">Lado (A/B)</label><select id="m-parte" class="w-full p-2 bg-slate-900 rounded border border-slate-600"><option value="">Nenhum</option><option value="A">A</option><option value="B">B</option></select></div>
+    <div><label class="text-xs">Grupo</label><input id="m-grupo" type="number" class="w-full p-2 bg-slate-900 rounded border border-slate-600"></div>
+    <div class="col-span-2 flex gap-2 mt-4">
+        <button type="submit" class="flex-1 bg-blue-600 py-3 rounded-lg font-bold">SALVAR</button>
+        <button type="button" onclick="closeStudentModal()" class="flex-1 bg-slate-700 py-3 rounded-lg">CANCELAR</button>
+    </div>
+</form>
             </div>
         </div>
 
@@ -382,7 +390,7 @@ async function updateDateFromPicker(val) {
                         <p class="text-white text-sm mb-2">Definir Grupo:</p>
                         <div class="flex gap-2">
                             <input id="mass-group-val" type="number" class="w-20 p-2 bg-slate-900 text-white rounded" placeholder="Ex: 1">
-                            <button onclick="onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
+                            <button onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
                         </div>
                     </div>
                 </div>
@@ -390,6 +398,23 @@ async function updateDateFromPicker(val) {
             </div>
         </div>`;
     }
+
+
+    function populateModalDropdowns(studentData = null) {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    const turmas = [...new Set(allStudents.map(s => s.nome_turma))].sort();
+
+    const fill = (id, list, selected) => {
+        const el = document.getElementById(id);
+        el.innerHTML = list.map(x => `<option value="${x}">${x}</option>`).join('');
+        if (selected) el.value = selected;
+    };
+
+    fill('m-sede', sedes, studentData?.sede);
+    fill('m-serie', series, studentData?.serie);
+    fill('m-turma', turmas, studentData?.nome_turma);
+}
 
    // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
 function applyAttendanceFilters() {
@@ -634,34 +659,37 @@ function applyAttendanceFilters() {
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
     async function massAssign(field, value) {
-        if (selectedStudentsForAssign.size === 0) {
-            return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
-        }
-
-        const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
-        if (!confirmacao) return;
-
-        showToast("Atualizando banco de dados...", "info");
-
-        // Converte o Set de IDs em uma lista para processar
-        const ids = Array.from(selectedStudentsForAssign);
-        
-        // Atualiza no Supabase todos os IDs selecionados
-        const { error } = await _supabase
-            .from('students')
-            .update({ [field]: value })
-            .in('id', ids);
-
-        if (error) {
-            console.error("Erro na atribuição:", error);
-            showToast("Erro ao atualizar alguns alunos.", "error");
-        } else {
-            showToast("Atualização concluída com sucesso!", "success");
-            selectedStudentsForAssign.clear();
-            await refreshData(); // Recarrega os dados para atualizar a tabela
-            closeAssignRoomModal();
-        }
+    if (selectedStudentsForAssign.size === 0) {
+        return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
     }
+
+    if (!value) return alert("Por favor, insira um valor para atribuir.");
+
+    const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
+    if (!confirmacao) return;
+
+    showToast("Atualizando banco de dados...", "info");
+
+    const ids = Array.from(selectedStudentsForAssign);
+    
+    // Converte para número se o campo for 'grupo'
+    const finalValue = field === 'grupo' ? parseInt(value) : value;
+
+    const { error } = await _supabase
+        .from('students')
+        .update({ [field]: finalValue })
+        .in('id', ids);
+
+    if (error) {
+        console.error("Erro na atribuição:", error);
+        showToast("Erro ao atualizar: " + error.message, "error");
+    } else {
+        showToast("Atualização concluída!", "success");
+        selectedStudentsForAssign.clear();
+        await refreshData(); 
+        closeAssignRoomModal();
+    }
+}
 
     async function deleteAllStudents() {
         const confirmar1 = confirm("⚠️ ATENÇÃO: Isso apagará TODOS os 2 mil alunos do sistema. Você tem certeza?");
@@ -805,23 +833,28 @@ function applyAttendanceFilters() {
     }
 
        function openEditModal(ra) {
-        const s = allStudents.find(x => x.ra === ra);
-        document.getElementById('modal-title').innerText = "Editar Aluno";
-        document.getElementById('m-nome').value = s.nome_aluno;
-        document.getElementById('m-ra').value = s.ra;
-        document.getElementById('m-sede').value = s.sede;
-        document.getElementById('m-serie').value = s.serie;
-        document.getElementById('m-turma').value = s.nome_turma;
-        document.getElementById('m-parte').value = s.parte_sala || '';
-        document.getElementById('m-grupo').value = s.grupo || '';
-        document.getElementById('student-modal').classList.remove('hidden');
-    }
+    const s = allStudents.find(x => x.ra === ra);
+    document.getElementById('modal-title').innerText = "Editar Aluno";
+    
+    // Preenche os dropdowns primeiro
+    populateModalDropdowns(s);
+    
+    document.getElementById('m-nome').value = s.nome_aluno;
+    document.getElementById('m-ra').value = s.ra;
+    document.getElementById('m-parte').value = s.parte_sala || '';
+    document.getElementById('m-grupo').value = s.grupo || '';
+    document.getElementById('student-modal').classList.remove('hidden');
+}
 
     function openAddModal() {
-        document.getElementById('modal-title').innerText = "Adicionar Aluno";
-        document.getElementById('student-form').reset();
-        document.getElementById('student-modal').classList.remove('hidden');
-    }
+    document.getElementById('modal-title').innerText = "Adicionar Aluno";
+    document.getElementById('student-form').reset();
+    
+    // Preenche os dropdowns com as opções disponíveis (sem seleção prévia)
+    populateModalDropdowns();
+    
+    document.getElementById('student-modal').classList.remove('hidden');
+}
 
     // Função para abrir o modal e carregar apenas os alunos que estão filtrados na tela
     function openAssignRoomModal() {
