@@ -70,6 +70,7 @@
     let selectedDate = new Date(new Date().setHours(0,0,0,0));
     let selectedStudentsForAssign = new Set();
     let importErrors = [];
+    let isUploadCardVisible = false; // Começa oculto por padrão
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -223,21 +224,34 @@ async function updateDateFromPicker(val) {
           <div class="max-w-7xl mx-auto">
             ${renderNavigationHeader()}
 
-            <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
-              <h2 class="font-semibold mb-4 text-white text-xl">📊 Importar Planilha Excel</h2>
-              <div class="flex flex-col sm:flex-row gap-4 items-center">
-                <input type="file" id="excel-upload" accept=".xlsx,.xls" class="flex-1 p-3 border-2 border-dashed border-slate-600 rounded-lg text-slate-400">
-                <button onclick="handleExcelUpload()" id="upload-btn" class="px-6 py-3 rounded-lg font-semibold text-white bg-blue-600">Processar Planilha</button>
-              </div>
-              <div id="import-progress" class="hidden mt-4">
-                 <div class="progress-bar"><div id="progress-fill" class="progress-fill bg-blue-500" style="width: 0%"></div></div>
-                 <p id="progress-text" class="text-slate-400 text-sm mt-2 text-center">Iniciando...</p>
-              </div>
-              <div class="mt-3 p-3 rounded-lg bg-slate-900/50 border border-slate-700 text-sm text-slate-300">
-                <p class="font-semibold mb-1">📋 Colunas Necessárias (MAIÚSCULAS):</p>
-                <p class="font-mono">SEDE | SERIE | TURNO | CURSO | NOME_TURMA | RA | NOME_ALUNO</p>
-              </div>
-            </div>
+            <div class="rounded-xl shadow-lg p-6 mb-6 transition-all duration-300" style="background-color: ${config.card_color}">
+    <div class="flex justify-between items-center cursor-pointer" onclick="toggleUploadCard()">
+        <h2 class="font-semibold text-white text-xl flex items-center gap-2">
+            📊 Importar Planilha Excel 
+            <span id="upload-status-badge" class="text-[10px] bg-slate-700 px-2 py-1 rounded uppercase tracking-wider text-slate-400">Oculto</span>
+        </h2>
+        <button class="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-lg transition-transform" id="upload-toggle-btn">
+            <svg id="upload-icon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+        </button>
+    </div>
+
+    <div id="upload-content" class="${isUploadCardVisible ? '' : 'hidden'} mt-6 border-t border-slate-700 pt-6">
+        <div class="flex flex-col sm:flex-row gap-4 items-center">
+            <input type="file" id="excel-upload" accept=".xlsx,.xls" class="flex-1 w-full p-3 border-2 border-dashed border-slate-600 rounded-lg text-slate-400">
+            <button onclick="handleExcelUpload()" id="upload-btn" class="w-full sm:w-auto px-6 py-3 rounded-lg font-semibold text-white bg-blue-600">Processar Planilha</button>
+        </div>
+        <div id="import-progress" class="hidden mt-4">
+             <div class="progress-bar"><div id="progress-fill" class="progress-fill bg-blue-500" style="width: 0%"></div></div>
+             <p id="progress-text" class="text-slate-400 text-sm mt-2 text-center">Iniciando...</p>
+        </div>
+        <div class="mt-3 p-3 rounded-lg bg-slate-900/50 border border-slate-700 text-sm text-slate-300">
+            <p class="font-semibold mb-1">📋 Colunas Necessárias (MAIÚSCULAS):</p>
+            <p class="font-mono text-[11px] break-all">SEDE | SERIE | TURNO | CURSO | NOME_TURMA | RA | NOME_ALUNO</p>
+        </div>
+    </div>
+</div>
 
             <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
               <div class="flex justify-between items-center mb-4">
@@ -319,6 +333,27 @@ async function updateDateFromPicker(val) {
       updateFilterOptions('attendance');
       applyAttendanceFilters();
     }
+
+    function toggleUploadCard() {
+    isUploadCardVisible = !isUploadCardVisible;
+    const content = document.getElementById('upload-content');
+    const icon = document.getElementById('upload-icon');
+    const badge = document.getElementById('upload-status-badge');
+
+    if (isUploadCardVisible) {
+        content.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+        badge.innerText = 'Ativo';
+        badge.classList.replace('bg-slate-700', 'bg-blue-600');
+        badge.classList.replace('text-slate-400', 'text-white');
+    } else {
+        content.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
+        badge.innerText = 'Oculto';
+        badge.classList.replace('bg-blue-600', 'bg-slate-700');
+        badge.classList.replace('text-white', 'text-slate-400');
+    }
+}
 
     // --- COMPONENTES REUTILIZÁVEIS ---
     function renderFilterSelects(context) {
