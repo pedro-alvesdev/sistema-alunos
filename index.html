@@ -157,7 +157,7 @@ async function refreshData() {
               <p style="font-size: ${baseSize * 0.95}px; color: #94a3b8">Digite o código de acesso para continuar</p>
             </div>
             <form id="login-form" class="space-y-6">
-              <input type="password" id="access-code" required maxlength="6" class="w-full p-4 border-2 rounded-lg text-center text-2xl tracking-widest font-mono" placeholder="••••••">
+              <input type="password" id="access-code" required maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" class="w-full p-4 border-2 rounded-lg text-center text-2xl tracking-widest font-mono" placeholder="••••••">
               <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white transition-all hover:opacity-90" style="background-color: ${config.primary_button_color}">🔓 Acessar Sistema</button>
             </form>
             <div id="login-error" class="hidden mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-400">❌ Código inválido.</div>
@@ -451,21 +451,25 @@ function applyAttendanceFilters() {
     }
 
     // 5. RENDERIZA A LISTA NA TELA
-    cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(x => {
-        const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
-        const present = att ? att.presente : true;
-        return `
-            <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+    // Localize o cont.innerHTML dentro de applyAttendanceFilters e substitua por:
+cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map((x, index) => {
+    const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
+    const present = att ? att.presente : true;
+    return `
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <span class="text-slate-600 font-mono font-bold w-6">${index + 1}</span>
                 <div>
                     <p class="text-white font-bold">${x.nome_aluno}</p>
                     <p class="text-slate-500 text-xs">${x.nome_turma} | Lado: ${x.parte_sala || '-'}</p>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
-                    <span class="slider"></span>
-                </label>
-            </div>`;
-    }).join('');
+            </div>
+            <label class="switch">
+                <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
+                <span class="slider"></span>
+            </label>
+        </div>`;
+}).join('');
 }
 
     // --- FUNÇÕES DE IMPRESSÃO ---
@@ -486,19 +490,21 @@ function applyAttendanceFilters() {
             <body>
                 <h1>Lista Geral de Alunos</h1>
                 <p>Total de alunos: ${filteredStudents.length}</p>
-                <table>
-                    <thead>
-                        <tr><th>Nome</th><th>RA</th><th>Sede</th><th>Série</th><th>Turma</th><th>Lado/G</th></tr>
-                    </thead>
-                    <tbody>
-                        ${filteredStudents.map(s => `
-                            <tr>
-                                <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.sede}</td>
-                                <td>${s.serie}</td><td>${s.nome_turma}</td>
-                                <td>${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
-                            </tr>`).join('')}
-                    </tbody>
-                </table>
+                // Dentro de printStudentList, altere a parte da tabela:
+<table>
+    <thead>
+        <tr><th>#</th><th>Nome</th><th>RA</th><th>Sede</th><th>Série</th><th>Turma</th><th>Lado/G</th></tr>
+    </thead>
+    <tbody>
+        ${filteredStudents.map((s, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.sede}</td>
+                <td>${s.serie}</td><td>${s.nome_turma}</td>
+                <td>${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
+            </tr>`).join('')}
+    </tbody>
+</table>
                 <script>window.print();<\/script>
             </body>
             </html>`;
@@ -801,36 +807,40 @@ function applyAttendanceFilters() {
     }
 
    function renderStudentList() {
-        const cont = document.getElementById('student-list');
-        const count = document.getElementById('student-count');
-        if(!cont) return;
-        count.innerText = filteredStudents.length;
+    const cont = document.getElementById('student-list');
+    const count = document.getElementById('student-count');
+    if(!cont) return;
+    count.innerText = filteredStudents.length;
 
-        cont.innerHTML = `
-            <table class="w-full text-white">
-                <thead class="bg-slate-900/50">
-                    <tr>
-                        <th class="p-3 text-left">Nome</th>
-                        <th class="p-3 text-left">Turma</th>
-                        <th class="p-3 text-left">Lado/G</th>
-                        <th class="p-3 text-center">Ações</th>
+    cont.innerHTML = `
+        <table class="w-full text-white">
+            <thead class="bg-slate-900/50">
+                <tr>
+                    <th class="p-3 text-left w-12">#</th>
+                    <th class="p-3 text-left">Nome</th>
+                    <th class="p-3 text-left">Turma</th>
+                    <th class="p-3 text-left">Lado/G</th>
+                    <th class="p-3 text-center">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filteredStudents
+                    .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
+                    .map((s, index) => `
+                    <tr class="border-b border-slate-700 hover:bg-slate-700/30">
+                        <td class="p-3 text-slate-500 font-mono text-sm">${index + 1}</td>
+                        <td class="p-3">${s.nome_aluno}</td>
+                        <td class="p-3 text-sm">${s.nome_turma}</td>
+                        <td class="p-3 text-sm">${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="openEditModal('${s.ra}')" class="text-blue-400 mr-3">✏️</button>
+                            <button onclick="deleteStudent('${s.id}')" class="text-red-400">🗑️</button>
+                        </td>
                     </tr>
-                </thead>
-                <tbody>
-                    ${filteredStudents.sort((a,b)=>a.nome_aluno.localeCompare(b.nome_aluno)).map(s => `
-                        <tr class="border-b border-slate-700 hover:bg-slate-700/30">
-                            <td class="p-3">${s.nome_aluno}</td>
-                            <td class="p-3 text-sm">${s.nome_turma}</td>
-                            <td class="p-3 text-sm">${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
-                            <td class="p-3 text-center">
-                                <button onclick="openEditModal('${s.ra}')" class="text-blue-400 mr-3">✏️</button>
-                                <button onclick="deleteStudent('${s.id}')" class="text-red-400">🗑️</button>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>`;
-    }
+                `).join('')}
+            </tbody>
+        </table>`;
+}
 
        function openEditModal(ra) {
     const s = allStudents.find(x => x.ra === ra);
