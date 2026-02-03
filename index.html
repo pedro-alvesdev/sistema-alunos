@@ -435,6 +435,22 @@ async function updateDateFromPicker(val) {
     }
 
 
+    async function deleteStudent(id) {
+    if (!confirm("Tem certeza que deseja excluir este aluno?")) return;
+
+    const { error } = await _supabase
+        .from('students')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        showToast("Erro ao excluir", "error");
+    } else {
+        showToast("Aluno removido", "success");
+        await refreshData();
+    }
+}
+
     function populateModalDropdowns(studentData = null) {
     const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
     const series = [...new Set(allStudents.map(s => s.serie))].sort();
