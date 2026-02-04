@@ -47,6 +47,23 @@
         width: 98%;
         table-layout: auto;
     }
+    @media print {
+    .no-print {
+        display: none !important;
+    }
+    body {
+        background: white !important;
+        color: black !important;
+    }
+    .bg-slate-900, .bg-slate-800 {
+        background: transparent !important;
+        border: 1px solid #ddd !important;
+        color: black !important;
+    }
+    .text-white, .text-blue-400, .text-emerald-400 {
+        color: black !important;
+    }
+}
   </style>
 </head>
 <body class="h-full">
@@ -215,6 +232,7 @@ async function refreshData() {
                 <button onclick="switchScreen('management')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gestão</button>
                 <button onclick="switchScreen('attendance')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
                 <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
+                <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
             </div>
             ` : ''}
         </header>`;
@@ -237,6 +255,131 @@ async function updateDateFromPicker(val) {
         await refreshData(); 
         renderAttendanceScreen();
     }
+}
+
+    async function renderResultsScreen() {
+    currentScreen = 'results';
+    const app = document.getElementById('app');
+    
+    app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+            <div class="max-w-7xl mx-auto">
+                ${renderNavigationHeader()}
+                
+                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 shadow-xl no-print">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Sede</label>
+                            <select id="res-sede" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Série</label>
+                            <select id="res-serie" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs"></select>
+                        </div>
+                        <div class="flex items-end gap-2">
+                            <button onclick="window.print()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs">🖨️ Imprimir Relatório</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="results-content" class="space-y-8">
+                    <p class="text-slate-500 text-center py-20 italic">Carregando dados...</p>
+                </div>
+            </div>
+        </div>`;
+
+    // Popula filtros de resultados
+    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    document.getElementById('res-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('res-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    
+    generateRanking();
+}
+
+async function generateRanking() {
+    const sede = document.getElementById('res-sede').value;
+    const serie = document.getElementById('res-serie').value;
+    const container = document.getElementById('results-content');
+
+    // 1. Busca todos os registros do banco para esta sede/série
+    const { data: evals, error } = await _supabase
+        .from('evaluations_fetec')
+        .select('*')
+        .eq('sede', sede)
+        .eq('serie', serie);
+
+    if (error) return console.error(error);
+
+    // 2. Processamento de dados: Agrupar por Grupo ou RA
+    const processado = {};
+    evals.forEach(e => {
+        const key = e.ra_aluno || `Grupo ${e.grupo} (${e.nome_turma})`;
+        if (!processado[key]) {
+            processado[key] = { 
+                nome: key, 
+                avaliacoes: [], 
+                apto: false,
+                turma: e.nome_turma
+            };
+        }
+        const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
+        processado[key].avaliacoes.push({ prof: e.nome_professor, media: mediaIndiv, apto: e.apto_fetec });
+        if (e.apto_fetec) processado[key].apto = true; // Se um prof marcou como apto, ele aparece na lista
+    });
+
+    // Converter para array e calcular média final
+    const ranking = Object.values(processado).map(obj => {
+        const somaMedias = obj.avaliacoes.reduce((acc, a) => acc + a.media, 0);
+        obj.mediaFinal = somaMedias / obj.avaliacoes.length;
+        return obj;
+    }).sort((a, b) => b.mediaFinal - a.mediaFinal);
+
+    // 3. Renderizar Tabelas
+    container.innerHTML = `
+        <section class="bg-slate-900 p-6 rounded-2xl border border-slate-700">
+            <h2 class="text-blue-400 font-bold mb-4 uppercase text-sm tracking-widest">📋 Notas Detalhadas (Por Professor)</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-300">
+                    <thead>
+                        <tr class="border-b border-slate-700">
+                            <th class="p-2">Equipe/Aluno</th>
+                            <th class="p-2">Turma</th>
+                            <th class="p-2">Professores e Notas</th>
+                            <th class="p-2 bg-blue-900/30 text-white font-bold">Média Final</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${ranking.map(r => `
+                            <tr class="border-b border-slate-800 hover:bg-slate-800/30">
+                                <td class="p-2 font-bold text-white">${r.nome}</td>
+                                <td class="p-2">${r.turma}</td>
+                                <td class="p-2">
+                                    ${r.avaliacoes.map(a => `<span class="inline-block bg-slate-800 rounded px-2 py-1 mr-1 mb-1">${a.prof}: <b>${a.media.toFixed(2)}</b></span>`).join('')}
+                                </td>
+                                <td class="p-2 bg-blue-900/20 text-blue-400 font-black">${r.mediaFinal.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="bg-emerald-900/10 p-6 rounded-2xl border border-emerald-500/30">
+            <h2 class="text-emerald-400 font-bold mb-4 uppercase text-sm tracking-widest">🏆 Selecionados para FETEC (Aptos)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                ${ranking.filter(r => r.apto).map(r => `
+                    <div class="bg-slate-900 p-3 rounded-lg border border-emerald-500/20 flex justify-between items-center">
+                        <div>
+                            <p class="text-white font-bold text-sm">${r.nome}</p>
+                            <p class="text-slate-500 text-[10px]">${r.turma}</p>
+                        </div>
+                        <span class="text-emerald-400 font-black">${r.mediaFinal.toFixed(1)}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </section>
+    `;
 }
 
     // --- TELA: GERENCIAMENTO ---
@@ -362,6 +505,7 @@ async function updateDateFromPicker(val) {
             return renderEvalCard(`Grupo ${g}`, null, g, membros);
         }).join('');
     }
+      loadExistingEvaluations();
 }
 
     function renderEvalCard(titulo, ra, grupo, membros = "") {
@@ -526,6 +670,53 @@ async function updateDateFromPicker(val) {
       applyAttendanceFilters();
     }
 
+    async function loadExistingEvaluations() {
+    const sede = document.getElementById('ev-sede').value;
+    const turma = document.getElementById('ev-turma').value;
+    const prof = document.getElementById('evaluator-name').value.trim();
+
+    if (!prof) return; // Só carrega se o professor se identificou
+
+    // Busca as avaliações deste professor para esta turma hoje
+    const { data, error } = await _supabase
+        .from('evaluations_fetec')
+        .select('*')
+        .eq('sede', sede)
+        .eq('nome_turma', turma)
+        .eq('nome_professor', prof);
+
+    if (error) {
+        console.error("Erro ao carregar avaliações:", error);
+        return;
+    }
+
+    if (data && data.length > 0) {
+        data.forEach(eval => {
+            const id = eval.ra_aluno || `g${eval.grupo}`;
+            const card = document.getElementById(`card-${id}`);
+            
+            if (card) {
+                // Preenche os campos de nota
+                document.getElementById(`nota-${id}-Oralidade`).value = eval.nota_oralidade;
+                document.getElementById(`nota-${id}-Postura`).value = eval.nota_postura;
+                document.getElementById(`nota-${id}-Clareza`).value = eval.nota_clareza;
+                document.getElementById(`nota-${id}-Dominio`).value = eval.nota_dominio;
+                document.getElementById(`nota-${id}-Transmissao`).value = eval.nota_transmissao;
+                
+                // Preenche observação e aptidão
+                document.getElementById(`obs-${id}`).value = eval.observacao || '';
+                document.getElementById(`apto-${id}`).checked = eval.apto_fetec;
+
+                // Estiliza o card para indicar que já foi salvo
+                const btn = card.querySelector('button');
+                btn.innerText = "✅ Atualizar Avaliação";
+                btn.classList.replace('bg-emerald-600', 'bg-blue-600');
+                card.classList.add('border-blue-500/50');
+            }
+        });
+    }
+}
+
     function toggleUploadCard() {
     isUploadCardVisible = !isUploadCardVisible;
     const content = document.getElementById('upload-content');
@@ -563,7 +754,7 @@ async function updateDateFromPicker(val) {
                         </h2>
                         <div class="w-full md:w-72">
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Nome do Professor Avaliador</label>
-                            <input type="text" id="evaluator-name" placeholder="Digite seu nome completo..." 
+                            <input type="text" id="evaluator-name" onchange="applyEvalList()" placeholder="Digite seu nome completo..." 
                                 class="w-full p-3 bg-slate-900 border border-emerald-500/50 rounded-lg text-white text-sm focus:border-emerald-500 outline-none transition-all">
                         </div>
                     </div>
