@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="pt-BR" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laboratorio Maker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { box-sizing: border-box; font-family: 'Inter', 'Segoe UI', sans-serif; }
+    .toast { position: fixed; top: 20px; right: 20px; padding: 16px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; animation: slideIn 0.3s ease-out; }
+    @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+    .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+    input:checked + .slider { background-color: #10b981; }
+    input:checked + .slider:before { transform: translateX(26px); }
+    .calendar-popup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 10px; }
+    .calendar-day { padding: 10px; text-align: center; cursor: pointer; border-radius: 6px; transition: all 0.2s; }
+    .calendar-day:hover { background-color: #f3f4f6; }
+    .calendar-day.selected { background-color: #6366f1; color: white; font-weight: bold; }
+    .calendar-day.today { border: 2px solid #6366f1; }
+    .progress-bar { width: 100%; background-color: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; }
+    .progress-fill { height: 100%; transition: width 0.3s ease; }
+    .modal-backdrop { background-color: rgba(0,0,0,0.5); }
+    #student-modal > div, #assign-room-modal > div {
+        max-height: 95vh;
+        overflow-y: auto;
+        width: 95%;
+        margin: auto;
+    }
+    /* Estilo para barra de rolagem mais bonita no celular */
+    .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    /* Remove preenchimentos laterais em telas pequenas para ganhar espaço */
+    @media (max-width: 640px) {
+        .min-h-full { padding: 12px 8px !important; }
+        .rounded-xl { padding-left: 8px !important; padding-right: 8px !important; }
+        td, th { padding-left: 4px !important; padding-right: 4px !important; font-size: 13px !important; }
+    }
+
+    /* Força a tabela a usar 100% da largura disponível */
+    #student-list table {
+        width: 98%;
+        table-layout: auto;
+    }
+  </style>
+</head>
+<body class="h-full">
+  <div id="app" class="w-full h-full overflow-auto bg-gradient-to-br from-indigo-50 to-blue-50"></div>
+
+  <script>
+    // --- CONFIGURAÇÃO SUPABASE ---
+    const SUPABASE_URL = 'https://nuhkdkiukqrlhdvnaiel.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_2Rd5khY_SUm3vBA3u5ZsHw_ps50tcTK';
+    const _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // --- ESTADO GLOBAL ---
+    let allStudents = [];
+    let allAttendances = [];
+    let filteredStudents = [];
+    let filteredAttendances = [];
+    let editingStudent = null;
+    let isAuthenticated = false;
+    let currentUser = 'admin';
+    let currentScreen = 'management';
+    let selectedDate = new Date(new Date().setHours(0,0,0,0));
+    let selectedStudentsForAssign = new Set();
+    let importErrors = [];
+    let isUploadCardVisible = false; // Começa oculto por padrão
+
+    const defaultConfig = {
+      page_title: "Laboratório Maker",
+      filter_title: "Filtros",
+      student_list_title: "Lista de Alunos",
+      background_color: "#0f172a",
+      card_color: "#1e293b",
+      text_color: "#e2e8f0",
+      primary_button_color: "#3b82f6",
+      secondary_button_color: "#475569",
+      font_size: 16
+    };
+
+    // --- CARREGAMENTO DE DADOS ---
+async function refreshData() {
+        showToast("Carregando banco de dados completo...", "info");
+        
+        let allFetchedStudents = [];
+        let lastCount = 0;
+        let page = 0;
+        const pageSize = 1000;
+
+        // Loop para buscar todos os alunos em blocos de 1000 (contorna o limite do servidor)
+        do {
+            const { data, error } = await _supabase
+                .from('students')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (error) {
+                console.error("Erro ao carregar bloco de alunos:", error);
+                break;
+            }
+
+            allFetchedStudents = allFetchedStudents.concat(data);
+            lastCount = data.length;
+            page++;
+        } while (lastCount === pageSize); // Se o bloco veio cheio, busca o próximo
+
+        // Busca a frequência (também em blocos, para garantir)
+        let allFetchedAttendance = [];
+        page = 0;
+        do {
+            const { data, error } = await _supabase
+                .from('attendance')
+                .select('*')
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+            
+            if (error) break;
+            allFetchedAttendance = allFetchedAttendance.concat(data);
+            lastCount = data.length;
+            page++;
+        } while (lastCount === pageSize);
+
+        allStudents = allFetchedStudents;
+        allAttendances = allFetchedAttendance;
+
+        if (currentScreen === 'management') {
+            updateFilterOptions('management');
+            applyFilters();
+        } else {
+            updateFilterOptions('attendance');
+            applyAttendanceFilters();
+        }
+    }
+
+    // --- INTERFACE: LOGIN ---
+    function showLoginScreen() {
+      const config = defaultConfig;
+      const baseSize = config.font_size;
+      const app = document.getElementById('app');
+      app.style.background = `linear-gradient(135deg, ${config.background_color}, #1e293b)`;
+      
+      app.innerHTML = `
+        <div class="w-full h-full flex items-center justify-center">
+          <div class="rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4" style="background-color: ${config.card_color}">
+            <div class="text-center mb-8">
+              <div class="mb-6 flex justify-center">
+                <svg width="120" height="120" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r="50" fill="${config.primary_button_color}"/>
+                  <rect x="35" y="40" width="50" height="40" fill="white" rx="2"/>
+                </svg>
+              </div>
+              <h1 class="font-bold mb-2 text-white" style="font-size: ${baseSize * 1.75}px">Acesso Restrito</h1>
+              <p style="font-size: ${baseSize * 0.95}px; color: #94a3b8">Digite o código de acesso para continuar</p>
+            </div>
+            <form id="login-form" class="space-y-6">
+              <input type="password" id="access-code" required maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" class="w-full p-4 border-2 rounded-lg text-center text-2xl tracking-widest font-mono" placeholder="••••••">
+              <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white transition-all hover:opacity-90" style="background-color: ${config.primary_button_color}">🔓 Acessar Sistema</button>
+            </form>
+            <div id="login-error" class="hidden mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-400">❌ Código inválido.</div>
+          </div>
+        </div>`;
+
+      document.getElementById('login-form').onsubmit = async (e) => {
+        e.preventDefault();
+        if(document.getElementById('access-code').value === '123456') {
+            isAuthenticated = true;
+            sessionStorage.setItem('isAuth', 'true');
+            await refreshData();
+            renderManagementScreen();
+        } else {
+            document.getElementById('login-error').classList.remove('hidden');
+        }
+      };
+    }
+
+    // --- INTERFACE: HEADER & NAVEGAÇÃO ---
+    function renderNavigationHeader() {
+      const config = defaultConfig;
+      return `
+        <header class="mb-8">
+          <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+            <h1 class="font-bold text-white" style="font-size: 32px">${config.page_title}</h1>
+            <button onclick="handleLogout()" class="px-4 py-2 rounded-lg font-semibold text-white bg-slate-600 hover:bg-slate-500">🚪 Sair</button>
+          </div>
+          <div class="flex gap-3">
+            <button onclick="switchScreen('management')" class="flex-1 px-6 py-3 rounded-lg font-semibold ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gerenciamento</button>
+            <button onclick="switchScreen('attendance')" class="flex-1 px-6 py-3 rounded-lg font-semibold ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
+          </div>
+        </header>`;
+    }
+
+    function switchScreen(s) {
+        currentScreen = s;
+        if(s === 'management') renderManagementScreen();
+        else renderAttendanceScreen();
+    }
+
+async function updateDateFromPicker(val) {
+    if (val) {
+        // Criamos a data usando os componentes ano, mês e dia separadamente
+        // Isso garante que o navegador use o fuso horário local e não o UTC
+        const [ano, mes, dia] = val.split('-').map(Number);
+        selectedDate = new Date(ano, mes - 1, dia, 12, 0, 0); // Define meio-dia para evitar erros de virada de dia
+        
+        showToast("Carregando data...", "info");
+        await refreshData(); 
+        renderAttendanceScreen();
+    }
+}
+
+    // --- TELA: GERENCIAMENTO ---
+    function renderManagementScreen() {
+      const config = defaultConfig;
+      const app = document.getElementById('app');
+      app.style.background = `linear-gradient(135deg, ${config.background_color}, #1e293b)`;
+      
+      app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+          <div class="max-w-7xl mx-auto">
+            ${renderNavigationHeader()}
+
+            <div class="rounded-xl shadow-lg p-6 mb-6 transition-all duration-300" style="background-color: ${config.card_color}">
+    <div class="flex justify-between items-center cursor-pointer" onclick="toggleUploadCard()">
+        <h2 class="font-semibold text-white text-xl flex items-center gap-2">
+            📊 Importar Planilha Excel 
+            <span id="upload-status-badge" class="text-[10px] bg-slate-700 px-2 py-1 rounded uppercase tracking-wider text-slate-400">Oculto</span>
+        </h2>
+        <button class="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-lg transition-transform" id="upload-toggle-btn">
+            <svg id="upload-icon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+        </button>
+    </div>
+
+    <div id="upload-content" class="${isUploadCardVisible ? '' : 'hidden'} mt-6 border-t border-slate-700 pt-6">
+        <div class="flex flex-col sm:flex-row gap-4 items-center">
+            <input type="file" id="excel-upload" accept=".xlsx,.xls" class="flex-1 w-full p-3 border-2 border-dashed border-slate-600 rounded-lg text-slate-400">
+            <button onclick="handleExcelUpload()" id="upload-btn" class="w-full sm:w-auto px-6 py-3 rounded-lg font-semibold text-white bg-blue-600">Processar Planilha</button>
+        </div>
+        <div id="import-progress" class="hidden mt-4">
+             <div class="progress-bar"><div id="progress-fill" class="progress-fill bg-blue-500" style="width: 0%"></div></div>
+             <p id="progress-text" class="text-slate-400 text-sm mt-2 text-center">Iniciando...</p>
+        </div>
+        <div class="mt-3 p-3 rounded-lg bg-slate-900/50 border border-slate-700 text-sm text-slate-300">
+            <p class="font-semibold mb-1">📋 Colunas Necessárias (MAIÚSCULAS):</p>
+            <p class="font-mono text-[11px] break-all">SEDE | SERIE | TURNO | CURSO | NOME_TURMA | RA | NOME_ALUNO</p>
+        </div>
+    </div>
+</div>
+
+            <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
+              <div class="flex justify-between items-center mb-4">
+                <h2 class="font-semibold text-white text-xl">🔍 ${config.filter_title}</h2>
+                <button onclick="clearFilters()" class="text-sm bg-slate-700 text-white px-3 py-1 rounded">🔄 Limpar</button>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                ${renderFilterSelects('management')}
+              </div>
+              <input type="text" id="search-nome" oninput="applyFilters()" placeholder="🔎 Buscar por Nome..." class="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 text-white">
+            </div>
+
+            <div class="rounded-xl shadow-lg p-6" style="background-color: ${config.card_color}">
+              <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
+    <h2 class="font-semibold text-white text-xl">
+        👥 ${config.student_list_title} (<span id="student-count">0</span>)
+    </h2>
+    
+    <div class="grid grid-cols-2 lg:flex lg:flex-row gap-2 w-full lg:w-auto">
+        <button onclick="printStudentList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors">
+            🖨️ Imprimir
+        </button>
+        <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500 transition-colors">
+            🏫 Atribuir
+        </button>
+        <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors">
+            ➕ Aluno
+        </button>
+        
+        <button onclick="deleteAllStudents()" class="bg-red-900/40 text-red-200 border border-red-800/50 px-4 py-2 rounded-lg text-sm hover:bg-red-800 hover:text-white transition-all">
+            🗑️ Limpar Tudo
+        </button>
+    </div>
+</div>
+             <div class="bg-slate-900/30 rounded-lg border-y border-slate-700 sm:border-x">
+    <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
+</div>
+          </div>
+        </div>
+        ${renderModals()}
+      `;
+      updateFilterOptions('management');
+      renderStudentList();
+    }
+
+    // --- TELA: FREQUÊNCIA ---
+    function renderAttendanceScreen() {
+      const config = defaultConfig;
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+          <div class="max-w-7xl mx-auto">
+            ${renderNavigationHeader()}
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+             <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
+    <h2 class="text-white font-bold mb-4 text-sm">📅 Data da Frequência</h2>
+    <div class="flex flex-col gap-2">
+        <input type="date" 
+               id="date-input-picker" 
+               value="${selectedDate.toISOString().split('T')[0]}"
+               onchange="updateDateFromPicker(this.value)"
+               class="w-full p-3 bg-blue-600 text-white rounded-lg font-bold text-center outline-none cursor-pointer border-none shadow-lg hover:bg-blue-500 transition-all">
+        <p class="text-slate-400 text-[10px] text-center">Clique acima para alterar o dia</p>
+    </div>
+</div>
+                </div>
+                <div class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700">
+                    <h2 class="text-white font-bold mb-4">🔍 Filtrar Turma</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        ${renderFilterSelects('attendance')}
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 p-3 sm:p-4 rounded-xl border border-slate-700 flex justify-between items-center gap-2">
+        
+                <h2 class="text-white font-bold text-xl">✅ Lista de Frequência (<span id="attendance-count">0</span>)</h2>
+                <button onclick="printAttendanceList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">🖨️ Imprimir Lista</button>
+              </div>
+              <div id="attendance-list" class="space-y-3"></div>
+            </div>
+          </div>
+        </div>
+        <div id="calendar-popup" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+             <div class="calendar-popup bg-white p-6 rounded-2xl">
+                <div id="calendar-grid" class="calendar-grid"></div>
+                <button onclick="closeCalendarPopup()" class="mt-4 w-full py-2 bg-slate-200 rounded-lg">Fechar</button>
+             </div>
+        </div>`;
+      updateFilterOptions('attendance');
+      applyAttendanceFilters();
+    }
+
+    function toggleUploadCard() {
+    isUploadCardVisible = !isUploadCardVisible;
+    const content = document.getElementById('upload-content');
+    const icon = document.getElementById('upload-icon');
+    const badge = document.getElementById('upload-status-badge');
+
+    if (isUploadCardVisible) {
+        content.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+        badge.innerText = 'Ativo';
+        badge.classList.replace('bg-slate-700', 'bg-blue-600');
+        badge.classList.replace('text-slate-400', 'text-white');
+    } else {
+        content.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
+        badge.innerText = 'Oculto';
+        badge.classList.replace('bg-blue-600', 'bg-slate-700');
+        badge.classList.replace('text-white', 'text-slate-400');
+    }
+}
+
+    // --- COMPONENTES REUTILIZÁVEIS ---
+    function renderFilterSelects(context) {
+        const prefix = context === 'management' ? 'filter' : 'attendance-filter';
+        return `
+            <div>
+                <label class="block text-slate-400 text-xs mb-1">Sede</label>
+                <select id="${prefix}-sede" onchange="apply${context === 'management' ? '' : 'Attendance'}Filters()" class="w-full p-2 rounded bg-slate-900 text-white border border-slate-600"><option value="todos">Todas</option></select>
+            </div>
+            <div>
+                <label class="block text-slate-400 text-xs mb-1">Série</label>
+                <select id="${prefix}-serie" onchange="apply${context === 'management' ? '' : 'Attendance'}Filters()" class="w-full p-2 rounded bg-slate-900 text-white border border-slate-600"><option value="todos">Todas</option></select>
+            </div>
+            <div>
+                <label class="block text-slate-400 text-xs mb-1">Turma</label>
+                <select id="${prefix}-turno" onchange="apply${context === 'management' ? '' : 'Attendance'}Filters()" class="w-full p-2 rounded bg-slate-900 text-white border border-slate-600"><option value="todos">Todas</option></select>
+            </div>
+            ${context === 'management' ? `
+            <div>
+                <label class="block text-slate-400 text-xs mb-1">Lado</label>
+                <select id="filter-parte-sala" onchange="applyFilters()" class="w-full p-2 rounded bg-slate-900 text-white border border-slate-600">
+                    <option value="todos">Todos</option><option value="A">Lado A</option><option value="B">Lado B</option><option value="nao-atribuido">Não Atribuído</option>
+                </select>
+            </div>` : ''}`;
+    }
+
+    function renderModals() {
+        return `
+        <div id="student-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+            <div class="bg-slate-800 p-8 rounded-2xl w-full max-w-2xl border border-slate-600 text-white">
+                <h3 id="modal-title" class="text-2xl font-bold mb-6">Adicionar Aluno</h3>
+                <form id="student-form" onsubmit="handleStudentSubmit(event)" class="grid grid-cols-2 gap-4">
+    <div class="col-span-2"><label class="text-xs">Nome Completo</label><input id="m-nome" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
+    <div class="col-span-2 sm:col-span-1"><label class="text-xs">RA</label><input id="m-ra" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></div>
+    
+    <div><label class="text-xs">Sede</label>
+        <select id="m-sede" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></select>
+    </div>
+    <div><label class="text-xs">Série</label>
+        <select id="m-serie" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></select>
+    </div>
+    <div><label class="text-xs">Turma</label>
+        <select id="m-turma" class="w-full p-2 bg-slate-900 rounded border border-slate-600" required></select>
+    </div>
+
+    <div><label class="text-xs">Lado (A/B)</label><select id="m-parte" class="w-full p-2 bg-slate-900 rounded border border-slate-600"><option value="">Nenhum</option><option value="A">A</option><option value="B">B</option></select></div>
+    <div><label class="text-xs">Grupo</label><input id="m-grupo" type="number" class="w-full p-2 bg-slate-900 rounded border border-slate-600"></div>
+    <div class="col-span-2 flex gap-2 mt-4">
+        <button type="submit" class="flex-1 bg-blue-600 py-3 rounded-lg font-bold">SALVAR</button>
+        <button type="button" onclick="closeStudentModal()" class="flex-1 bg-slate-700 py-3 rounded-lg">CANCELAR</button>
+    </div>
+</form>
+            </div>
+        </div>
+
+        <div id="assign-room-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+            <div class="bg-slate-800 p-6 rounded-2xl w-full max-w-4xl border border-slate-600 max-h-[90vh] overflow-y-auto">
+                <h3 class="text-white text-2xl font-bold mb-4">🏫 Atribuição em Massa</h3>
+                <div id="assign-list" class="space-y-2 mb-6 max-h-60 overflow-y-auto p-2 bg-slate-900 rounded"></div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-700/30 p-4 rounded-xl">
+                    <div>
+                        <p class="text-white text-sm mb-2">Definir Lado:</p>
+                        <div class="flex gap-2">
+                            <button onclick="massAssign('parte_sala', 'A')" class="flex-1 bg-blue-600 text-white py-2 rounded">Lado A</button>
+                            <button onclick="massAssign('parte_sala', 'B')" class="flex-1 bg-blue-600 text-white py-2 rounded">Lado B</button>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-white text-sm mb-2">Definir Grupo:</p>
+                        <div class="flex gap-2">
+                            <input id="mass-group-val" type="number" class="w-20 p-2 bg-slate-900 text-white rounded" placeholder="Ex: 1">
+                            <button onclick="massAssign('grupo', document.getElementById('mass-group-val').value)" class="flex-1 bg-green-600 text-white py-2 rounded">Atribuir Grupo</button>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="closeAssignRoomModal()" class="mt-6 w-full py-2 bg-slate-600 text-white rounded-lg">Fechar</button>
+            </div>
+        </div>`;
+    }
+
+
+    async function deleteStudent(id) {
+    if (!confirm("Tem certeza que deseja excluir este aluno?")) return;
+
+    const { error } = await _supabase
+        .from('students')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        showToast("Erro ao excluir", "error");
+    } else {
+        showToast("Aluno removido", "success");
+        await refreshData();
+    }
+}
+
+    function populateModalDropdowns(studentData = null) {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    const turmas = [...new Set(allStudents.map(s => s.nome_turma))].sort();
+
+    const fill = (id, list, selected) => {
+        const el = document.getElementById(id);
+        el.innerHTML = list.map(x => `<option value="${x}">${x}</option>`).join('');
+        if (selected) el.value = selected;
+    };
+
+    fill('m-sede', sedes, studentData?.sede);
+    fill('m-serie', series, studentData?.serie);
+    fill('m-turma', turmas, studentData?.nome_turma);
+}
+
+   // --- FUNÇÃO PARA RENDERIZAR A LISTA DE FREQUÊNCIA ---
+function applyAttendanceFilters() {
+    // 1. Captura os valores selecionados nos filtros da frequência
+    const s = document.getElementById('attendance-filter-sede')?.value || 'todos';
+    const e = document.getElementById('attendance-filter-serie')?.value || 'todos';
+    const t = document.getElementById('attendance-filter-turno')?.value || 'todos';
+    
+    // 2. Formata a data para a busca (YYYY-MM-DD)
+    const dKey = selectedDate.getFullYear() + '-' + 
+                 String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                 String(selectedDate.getDate()).padStart(2, '0');
+
+    // 3. ATUALIZA OS DROPDOWNS (ENCADEAMENTO)
+    updateFilterOptions('attendance', { sede: s, serie: e, turma: t });
+
+    // 4. FILTRA A LISTA DE ALUNOS QUE SERÁ EXIBIDA
+    const list = allStudents.filter(x => {
+        const mSede = s === 'todos' || x.sede === s;
+        const mSerie = e === 'todos' || x.serie === e;
+        const mTurma = t === 'todos' || x.nome_turma === t;
+        return mSede && mSerie && mTurma;
+    });
+
+    const countEl = document.getElementById('attendance-count');
+    if (countEl) countEl.innerText = list.length;
+
+    const cont = document.getElementById('attendance-list');
+    if (!cont) return;
+
+    if (list.length === 0) {
+        cont.innerHTML = `<p class="text-slate-500 text-center py-10">Nenhum aluno encontrado para os filtros selecionados.</p>`;
+        return;
+    }
+
+    // 5. RENDERIZA A LISTA NA TELA
+    // Localize o cont.innerHTML dentro de applyAttendanceFilters e substitua por:
+cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).map((x, index) => {
+    const att = allAttendances.find(a => a.ra === x.ra && a.data_presenca === dKey);
+    const present = att ? att.presente : true;
+    return `
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <span class="text-slate-600 font-mono font-bold w-6">${index + 1}</span>
+                <div>
+                    <p class="text-white font-bold">${x.nome_aluno}</p>
+                    <p class="text-slate-500 text-xs">${x.nome_turma} | Lado: ${x.parte_sala || '-'}</p>
+                </div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" onchange="togglePresence('${x.ra}', this.checked)" ${present ? 'checked' : ''}>
+                <span class="slider"></span>
+            </label>
+        </div>`;
+}).join('');
+}
+
+    // --- FUNÇÕES DE IMPRESSÃO ---
+    function printStudentList() {
+        const win = window.open('', '_blank');
+        const html = `
+            <html>
+            <head>
+                <title>Lista de Alunos</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+                    th { background: #f2f2f2; }
+                    h1 { text-align: center; }
+                </style>
+            </head>
+            <body>
+                <h1>Lista Geral de Alunos</h1>
+                <p>Total de alunos: ${filteredStudents.length}</p>
+                // Dentro de printStudentList, altere a parte da tabela:
+<table>
+    <thead>
+        <tr><th>#</th><th>Nome</th><th>RA</th><th>Sede</th><th>Série</th><th>Turma</th><th>Lado/G</th></tr>
+    </thead>
+    <tbody>
+        ${filteredStudents.map((s, index) => `
+            <tr>
+                <td>${index + 1}</td>
+                <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.sede}</td>
+                <td>${s.serie}</td><td>${s.nome_turma}</td>
+                <td>${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
+            </tr>`).join('')}
+    </tbody>
+</table>
+                <script>window.print();<\/script>
+            </body>
+            </html>`;
+        win.document.write(html);
+        win.document.close();
+    }
+
+    function printAttendanceList() {
+        const dKey = selectedDate.toLocaleDateString('pt-BR');
+        const win = window.open('', '_blank');
+        const html = `
+            <html>
+            <head>
+                <title>Frequência - ${dKey}</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+                    th { background: #f2f2f2; }
+                    .status { font-weight: bold; }
+                    h1 { text-align: center; margin-bottom: 0; }
+                    .date { text-align: center; margin-top: 5px; color: #666; }
+                </style>
+            </head>
+            <body>
+                <h1>Relatório de Frequência</h1>
+                <p class="date">Data: ${dKey}</p>
+                <table>
+                    <thead>
+                        <tr><th>Nome</th><th>RA</th><th>Turma</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        ${allStudents.filter(s => {
+                            // Filtra apenas os que estão visíveis na tela no momento da impressão
+                            const sede = document.getElementById('attendance-filter-sede')?.value || 'todos';
+                            const serie = document.getElementById('attendance-filter-serie')?.value || 'todos';
+                            const turno = document.getElementById('attendance-filter-turno')?.value || 'todos';
+                            return (sede === 'todos' || s.sede === sede) && (serie === 'todos' || s.serie === serie) && (turno === 'todos' || s.nome_turma === turno);
+                        }).sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(s => {
+                            const att = allAttendances.find(a => a.ra === s.ra && a.data_presenca === selectedDate.toISOString().split('T')[0]);
+                            const present = att ? att.presente : true;
+                            return `
+                                <tr>
+                                    <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.nome_turma}</td>
+                                    <td class="status">${present ? 'PRESENTE' : 'AUSENTE'}</td>
+                                </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+                <script>window.print();<\/script>
+            </body>
+            </html>`;
+        win.document.write(html);
+        win.document.close();
+    }
+
+    // --- LÓGICA DE NEGÓCIO (SUPABASE) ---
+
+    async function handleExcelUpload() {
+      const file = document.getElementById('excel-upload').files[0];
+      if (!file) return showToast("Selecione um arquivo!", "error");
+
+      const btn = document.getElementById('upload-btn');
+      const prog = document.getElementById('import-progress');
+      const fill = document.getElementById('progress-fill');
+      const txt = document.getElementById('progress-text');
+
+      btn.disabled = true;
+      prog.classList.remove('hidden');
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+
+        for (let i = 0; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          const student = {
+            sede: String(row.SEDE || ''),
+            serie: String(row.SERIE || ''),
+            turno: String(row.TURNO || ''),
+            curso: String(row.CURSO || ''),
+            nome_turma: String(row.NOME_TURMA || ''),
+            ra: String(row.RA || ''),
+            nome_aluno: String(row.NOME_ALUNO || ''),
+            usuario: currentUser
+          };
+
+          await _supabase.from('students').upsert(student, { onConflict: 'ra' });
+          
+          const pct = Math.round(((i + 1) / jsonData.length) * 100);
+          fill.style.width = pct + "%";
+          txt.innerText = `Importando: ${i+1} de ${jsonData.length}`;
+        }
+        showToast("Sucesso!", "success");
+        await refreshData();
+        btn.disabled = false;
+        prog.classList.add('hidden');
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    async function handleStudentSubmit(e) {
+    e.preventDefault(); // Impede o recarregamento da página
+    
+    const student = {
+        nome_aluno: document.getElementById('m-nome').value,
+        ra: document.getElementById('m-ra').value,
+        sede: document.getElementById('m-sede').value,
+        serie: document.getElementById('m-serie').value,
+        nome_turma: document.getElementById('m-turma').value,
+        parte_sala: document.getElementById('m-parte').value,
+        grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null,
+        usuario: currentUser
+    };
+
+    showToast("Salvando alterações...", "info");
+
+    const { error } = await _supabase
+        .from('students')
+        .upsert(student, { onConflict: 'ra' });
+
+    if (error) {
+        console.error("Erro ao salvar:", error);
+        showToast("Erro ao salvar: " + error.message, "error");
+    } else {
+        showToast("Dados atualizados com sucesso!", "success");
+        closeStudentModal();
+        await refreshData(); // Recarrega os dados do banco para a memória local
+        
+        // Renderiza a tela correta dependendo de onde você está
+        if (currentScreen === 'management') renderManagementScreen();
+        else renderAttendanceScreen();
+    }
+}
+
+  async function togglePresence(ra, val) {
+        const dKey = selectedDate.getFullYear() + '-' + 
+             String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
+             String(selectedDate.getDate()).padStart(2, '0');
+        const student = allStudents.find(x => x.ra === ra);
+        
+        if (!student) return;
+
+        // 1. Salva no Supabase (Banco de Dados)
+        const { error } = await _supabase.from('attendance').upsert({
+            ra: ra, 
+            data_presenca: dKey, 
+            presente: val, 
+            nome_aluno: student.nome_aluno, 
+            nome_turma: student.nome_turma, 
+            usuario: currentUser
+        }, { onConflict: 'ra,data_presenca' });
+
+        if (error) {
+            showToast("Erro ao salvar presença", "error");
+            console.error(error);
+        } else {
+            // 2. Sincroniza a memória local (allAttendances)
+            const index = allAttendances.findIndex(a => a.ra === ra && a.data_presenca === dKey);
+            
+            if (index !== -1) {
+                allAttendances[index].presente = val;
+            } else {
+                allAttendances.push({ ra, data_presenca: dKey, presente: val });
+            }
+            
+            showToast(val ? "Presente" : "Ausente", "success");
+        }
+    }
+
+   // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
+    async function massAssign(field, value) {
+    if (selectedStudentsForAssign.size === 0) {
+        return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
+    }
+
+    if (!value) return alert("Por favor, insira um valor para atribuir.");
+
+    const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
+    if (!confirmacao) return;
+
+    showToast("Atualizando banco de dados...", "info");
+
+    const ids = Array.from(selectedStudentsForAssign);
+    
+    // Converte para número se o campo for 'grupo'
+    const finalValue = field === 'grupo' ? parseInt(value) : value;
+
+    const { error } = await _supabase
+        .from('students')
+        .update({ [field]: finalValue })
+        .in('id', ids);
+
+    if (error) {
+        console.error("Erro na atribuição:", error);
+        showToast("Erro ao atualizar: " + error.message, "error");
+    } else {
+        showToast("Atualização concluída!", "success");
+        selectedStudentsForAssign.clear();
+        await refreshData(); 
+        closeAssignRoomModal();
+    }
+}
+
+    async function deleteAllStudents() {
+        const confirmar1 = confirm("⚠️ ATENÇÃO: Isso apagará TODOS os 2 mil alunos do sistema. Você tem certeza?");
+        if (!confirmar1) return;
+
+        const confirmar2 = confirm("ESTA AÇÃO NÃO PODE SER DESFEITA. Apagar tudo agora?");
+        if (!confirmar2) return;
+
+        showToast("Limpando banco de dados...", "info");
+
+        // O comando .delete().neq('id', 0) é um truque para apagar todas as linhas no Supabase
+        const { error } = await _supabase
+            .from('students')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); 
+
+        if (error) {
+            console.error(error);
+            showToast("Erro ao limpar banco.", "error");
+        } else {
+            // Também limpamos a frequência para não deixar dados órfãos
+            await _supabase.from('attendance').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+            showToast("Sistema limpo com sucesso!", "success");
+            await refreshData();
+        }
+    }
+   
+    function clearFilters() {
+        const sede = document.getElementById('filter-sede');
+        const serie = document.getElementById('filter-serie');
+        const turno = document.getElementById('filter-turno');
+        const parte = document.getElementById('filter-parte-sala');
+        const busca = document.getElementById('search-nome');
+
+        if(sede) sede.value = 'todos';
+        if(serie) serie.value = 'todos';
+        if(turno) turno.value = 'todos';
+        if(parte) parte.value = 'todos';
+        if(busca) busca.value = '';
+
+        updateFilterOptions('management', { sede: 'todos', serie: 'todos' });
+        applyFilters();
+        showToast("Filtros limpos", "success");
+    }
+    
+    // --- AUXILIARES ---
+    function applyFilters() {
+        const sede = document.getElementById('filter-sede')?.value || 'todos';
+        const serie = document.getElementById('filter-serie')?.value || 'todos';
+        const turma = document.getElementById('filter-turno')?.value || 'todos';
+        const parte = document.getElementById('filter-parte-sala')?.value || 'todos';
+        const search = document.getElementById('search-nome')?.value.toLowerCase() || '';
+
+        // 1. Atualiza os dropdowns dinamicamente para encadeamento
+        updateFilterOptions('management', { sede, serie });
+
+        // 2. Filtra a lista principal
+        filteredStudents = allStudents.filter(s => {
+            const mSede = sede === 'todos' || s.sede === sede;
+            const mSerie = serie === 'todos' || s.serie === serie;
+            const mTurma = turma === 'todos' || s.nome_turma === turma;
+            const mSearch = s.nome_aluno.toLowerCase().includes(search);
+            let mParte = true;
+            if(parte === 'nao-atribuido') mParte = !s.parte_sala;
+            else if(parte !== 'todos') mParte = s.parte_sala === parte;
+            
+            return mSede && mSerie && mTurma && mSearch && mParte;
+        });
+        renderStudentList();
+    }
+
+   function updateFilterOptions(ctx, currentFilters = {}) {
+        const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
+        
+        // Base de dados para os dropdowns (respeita o encadeamento)
+        let baseParaDropdowns = allStudents;
+        
+        // Se uma sede foi selecionada, as séries devem ser apenas daquela sede
+        if (currentFilters.sede && currentFilters.sede !== 'todos') {
+            baseParaDropdowns = baseParaDropdowns.filter(s => s.sede === currentFilters.sede);
+        }
+        
+        // Se uma série foi selecionada, as turmas devem ser apenas daquela série
+        if (currentFilters.serie && currentFilters.serie !== 'todos') {
+            baseParaDropdowns = baseParaDropdowns.filter(s => s.serie === currentFilters.serie);
+        }
+
+        const sedes = [...new Set(allStudents.map(s => s.sede))].sort(); 
+        const series = [...new Set(baseParaDropdowns.map(s => s.serie))].sort();
+        const turmas = [...new Set(baseParaDropdowns.map(s => s.nome_turma))].sort();
+        
+        const populate = (id, list, selectedValue) => {
+            const el = document.getElementById(prefix + id);
+            if(el) {
+                const previousValue = selectedValue || el.value;
+                el.innerHTML = '<option value="todos">Todas</option>' + 
+                               list.map(x => `<option value="${x}">${x}</option>`).join('');
+                
+                // Mantém o valor se ele ainda existir na nova lista filtrada
+                if (list.includes(previousValue)) el.value = previousValue;
+                else el.value = 'todos';
+            }
+        };
+
+        // Aplica a filtragem nos selects de acordo com o contexto
+        populate('-sede', sedes, currentFilters.sede);
+        populate('-serie', series, currentFilters.serie);
+        populate('-turno', turmas, currentFilters.turma);
+    }
+
+   function renderStudentList() {
+    const cont = document.getElementById('student-list');
+    const count = document.getElementById('student-count');
+    if(!cont) return;
+    count.innerText = filteredStudents.length;
+
+    cont.innerHTML = `
+        <table class="w-full text-white">
+            <thead class="bg-slate-900/50">
+                <tr>
+                    <th class="p-3 text-left w-12">#</th>
+                    <th class="p-3 text-left">Nome</th>
+                    <th class="p-3 text-left">Turma</th>
+                    <th class="p-3 text-left">Lado/G</th>
+                    <th class="p-3 text-center">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filteredStudents
+                    .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
+                    .map((s, index) => `
+                    <tr class="border-b border-slate-700 hover:bg-slate-700/30">
+                        <td class="p-3 text-slate-500 font-mono text-sm">${index + 1}</td>
+                        <td class="p-3">${s.nome_aluno}</td>
+                        <td class="p-3 text-sm">${s.nome_turma}</td>
+                        <td class="p-3 text-sm">${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="openEditModal('${s.ra}')" class="text-blue-400 mr-3">✏️</button>
+                            <button onclick="deleteStudent('${s.id}')" class="text-red-400">🗑️</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>`;
+}
+
+       function openEditModal(ra) {
+    const s = allStudents.find(x => x.ra === ra);
+    document.getElementById('modal-title').innerText = "Editar Aluno";
+    
+    // Preenche os dropdowns primeiro
+    populateModalDropdowns(s);
+    
+    document.getElementById('m-nome').value = s.nome_aluno;
+    document.getElementById('m-ra').value = s.ra;
+    document.getElementById('m-parte').value = s.parte_sala || '';
+    document.getElementById('m-grupo').value = s.grupo || '';
+    document.getElementById('student-modal').classList.remove('hidden');
+}
+
+    function openAddModal() {
+    document.getElementById('modal-title').innerText = "Adicionar Aluno";
+    document.getElementById('student-form').reset();
+    
+    // Preenche os dropdowns com as opções disponíveis (sem seleção prévia)
+    populateModalDropdowns();
+    
+    document.getElementById('student-modal').classList.remove('hidden');
+}
+
+    // Função para selecionar ou desmarcar todos os visíveis no modal
+function quickSelect(status) {
+    const checkboxes = document.querySelectorAll('.student-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = status;
+        const id = cb.getAttribute('data-id');
+        if (status) selectedStudentsForAssign.add(id);
+        else selectedStudentsForAssign.delete(id);
+    });
+}
+
+// Função para selecionar a primeira metade da lista (ordem alfabética)
+function quickSelectHalf() {
+    quickSelect(false); // Limpa tudo primeiro
+    const checkboxes = document.querySelectorAll('.student-checkbox');
+    const half = Math.ceil(checkboxes.length / 2);
+    
+    for (let i = 0; i < half; i++) {
+        checkboxes[i].checked = true;
+        const id = checkboxes[i].getAttribute('data-id');
+        selectedStudentsForAssign.add(id);
+    }
+}
+
+    // Função para abrir o modal e carregar apenas os alunos que estão filtrados na tela
+    function openAssignRoomModal() {
+    const listCont = document.getElementById('assign-list');
+    if (!listCont) return;
+
+    selectedStudentsForAssign.clear(); 
+
+    if (filteredStudents.length === 0) {
+        listCont.innerHTML = `<p class="text-slate-500 text-center py-4">Nenhum aluno filtrado para atribuir.</p>`;
+    } else {
+        // Ordena antes de renderizar para garantir a ordem alfabética na seleção de metade
+        const sortedList = [...filteredStudents].sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno));
+        
+        // Inserção dos botões de seleção rápida
+        listCont.innerHTML = `
+            <div class="flex flex-wrap gap-2 mb-4 sticky top-0 bg-slate-900 p-2 rounded-lg z-10 border border-slate-700">
+                <button onclick="quickSelect(true)" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs font-bold">✅ Todos</button>
+                <button onclick="quickSelectHalf()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs font-bold">🌓 Metade</button>
+                <button onclick="quickSelect(false)" class="flex-1 bg-red-900/30 text-red-400 py-1 px-2 rounded text-xs font-bold border border-red-900/50">❌ Limpar</button>
+            </div>
+            <div id="check-list-container" class="space-y-1">
+                ${sortedList.map(s => `
+                    <div class="flex items-center gap-3 p-2 border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
+                        <input type="checkbox" 
+                               class="student-checkbox w-4 h-4 cursor-pointer" 
+                               data-id="${s.id}"
+                               onchange="this.checked ? selectedStudentsForAssign.add('${s.id}') : selectedStudentsForAssign.delete('${s.id}')">
+                        <span class="text-white text-sm">${s.nome_aluno} <span class="text-slate-500 text-xs">(${s.nome_turma})</span></span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+    
+    document.getElementById('assign-room-modal').classList.remove('hidden');
+}
+
+    // --- INICIALIZAÇÃO ---
+    window.onload = () => {
+        if(sessionStorage.getItem('isAuth') === 'true') {
+            isAuthenticated = true;
+            refreshData().then(() => renderManagementScreen());
+        } else {
+            showLoginScreen();
+        }
+    };
+
+    // (Funções de utilidade como formatDate, handleLogout, close modals seguem o padrão)
+    function formatDate(d) { return d.toLocaleDateString('pt-BR'); }
+    function closeStudentModal() { document.getElementById('student-modal').classList.add('hidden'); }
+    function closeAssignRoomModal() { document.getElementById('assign-room-modal').classList.add('hidden'); }
+    function handleLogout() { sessionStorage.clear(); location.reload(); }
+    function showToast(m, t) { 
+        const toast = document.createElement('div');
+        toast.className = `toast ${t === 'success' ? 'bg-green-600' : 'bg-blue-600'}`;
+        toast.innerText = m;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    }
+  </script>
+</body>
+</html>
