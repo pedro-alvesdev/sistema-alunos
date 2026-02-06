@@ -158,50 +158,53 @@ async function refreshData() {
 
     // --- INTERFACE: LOGIN ---
     function showLoginScreen() {
-  const config = defaultConfig;
-  const app = document.getElementById('app');
-  app.style.background = `linear-gradient(135deg, ${config.background_color}, #1e293b)`;
-  
-  app.innerHTML = `
-    <div class="w-full h-full flex items-center justify-center p-4">
-      <div class="rounded-2xl shadow-2xl p-8 max-w-md w-full" style="background-color: ${config.card_color}">
-        <div class="text-center mb-8">
-          <h1 class="font-bold mb-2 text-white text-2xl">Laboratório Maker</h1>
-          <p class="text-sm text-slate-400">Portal de Avaliação e Gestão</p>
-        </div>
-        
-        <form id="login-form" class="space-y-4 mb-8">
-          <label class="text-xs text-slate-500 uppercase font-bold">Administração</label>
-          <input type="password" id="access-code" required maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" class="w-full p-4 border-2 border-slate-700 bg-slate-900 rounded-lg text-center text-2xl tracking-widest font-mono text-white" placeholder="••••••">
-          <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all">🔓 Acessar Gestão</button>
-        </form>
+      const config = defaultConfig;
+      const app = document.getElementById('app');
+      app.style.background = `linear-gradient(135deg, ${config.background_color}, #1e293b)`;
+      
+      app.innerHTML = `
+        <div class="w-full h-full flex items-center justify-center p-4">
+          <div class="rounded-2xl shadow-2xl p-8 max-w-md w-full" style="background-color: ${config.card_color}">
+            <div class="text-center mb-8">
+              <h1 class="font-bold mb-2 text-white text-2xl">Laboratório Maker</h1>
+              <p class="text-sm text-slate-400">Portal de Avaliação e Gestão</p>
+            </div>
+            
+            <form id="login-form" class="space-y-4 mb-8">
+              <label class="text-xs text-slate-500 uppercase font-bold">Administração</label>
+              <input type="password" id="access-code" required maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" class="w-full p-4 border-2 border-slate-700 bg-slate-900 rounded-lg text-center text-2xl tracking-widest font-mono text-white" placeholder="••••••">
+              <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all">🔓 Acessar Gestão</button>
+            </form>
 
-        ${isFetecActive ? `
-    <div class="relative flex py-5 items-center">
-        <div class="flex-grow border-t border-slate-700"></div>
-        <span class="flex-shrink mx-4 text-slate-500 text-xs uppercase italic">ou avalie um projeto</span>
-        <div class="flex-grow border-t border-slate-700"></div>
-    </div>
-    <div class="space-y-4">
-        <button onclick="startPublicEvaluation()" class="w-full py-4 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
-            ⭐ Avaliar FETEC
-        </button>
-    </div>
-` : ''}
+            ${isFetecActive ? `
+                <div class="relative flex py-5 items-center">
+                    <div class="flex-grow border-t border-slate-700"></div>
+                    <span class="flex-shrink mx-4 text-slate-500 text-xs uppercase italic">ou avalie um projeto</span>
+                    <div class="flex-grow border-t border-slate-700"></div>
+                </div>
+                <div class="space-y-4">
+                    <button onclick="startPublicEvaluation()" class="w-full py-4 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
+                        ⭐ Avaliar FETEC
+                    </button>
+                </div>
+            ` : ''}
+          </div>
+        </div>`;
 
-  document.getElementById('login-form').onsubmit = async (e) => {
-    e.preventDefault();
-    if(document.getElementById('access-code').value === '123456') {
-        isAuthenticated = true;
-        currentUser = 'admin';
-        sessionStorage.setItem('isAuth', 'true');
-        await refreshData();
-        switchScreen('management'); // Usa o switchScreen para garantir a carga correta
-    } else {
-        showToast("Código inválido!", "error");
+      // Esta parte deve ficar FORA das crases da innerHTML
+      document.getElementById('login-form').onsubmit = async (e) => {
+        e.preventDefault();
+        if(document.getElementById('access-code').value === '123456') {
+            isAuthenticated = true;
+            currentUser = 'admin';
+            sessionStorage.setItem('isAuth', 'true');
+            await refreshData();
+            switchScreen('management');
+        } else {
+            showToast("Código inválido!", "error");
+        }
+      };
     }
-};
-}
 
     async function startPublicEvaluation() {
     isAuthenticated = false; // Define que não é o administrador
