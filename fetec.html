@@ -192,15 +192,15 @@ async function refreshData() {
   document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
     if(document.getElementById('access-code').value === '123456') {
-        isAuthenticated = true; // Você é Admin
+        isAuthenticated = true;
         currentUser = 'admin';
         sessionStorage.setItem('isAuth', 'true');
         await refreshData();
-        renderManagementScreen();
+        switchScreen('management'); // Usa o switchScreen para garantir a carga correta
     } else {
         showToast("Código inválido!", "error");
     }
-  };
+};
 }
 
     async function startPublicEvaluation() {
@@ -228,21 +228,32 @@ async function refreshData() {
             </div>
             
             ${isAdmin ? `
-            <div class="flex flex-wrap gap-2 sm:gap-3">
-                <button onclick="switchScreen('management')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gestão</button>
-                <button onclick="switchScreen('attendance')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
-                <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
-                <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
-            </div>
-            ` : ''}
+<div class="flex flex-wrap gap-2 sm:gap-3">
+    <button onclick="switchScreen('management')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gestão</button>
+    <button onclick="switchScreen('attendance')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
+    <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
+    <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
+</div>
+` : ''}
         </header>`;
 }
 
     function switchScreen(s) {
-        currentScreen = s;
-        if(s === 'management') renderManagementScreen();
-        else renderAttendanceScreen();
+    currentScreen = s;
+    
+    // Limpa o conteúdo anterior para evitar sobreposição
+    document.getElementById('app').innerHTML = ''; 
+
+    if (s === 'management') {
+        renderManagementScreen();
+    } else if (s === 'attendance') {
+        renderAttendanceScreen();
+    } else if (s === 'evaluation') {
+        renderEvaluationScreen();
+    } else if (s === 'results') {
+        renderResultsScreen();
     }
+}
 
 async function updateDateFromPicker(val) {
     if (val) {
