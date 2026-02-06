@@ -274,6 +274,22 @@ async function updateDateFromPicker(val) {
     }
 }
 
+    async function loadEvaluatorsList() {
+    const { data, error } = await _supabase
+        .from('evaluations_fetec')
+        .select('nome_professor');
+
+    if (error) return;
+
+    // Filtra apenas nomes únicos e remove nulos
+    const uniqueNames = [...new Set(data.map(item => item.nome_professor))].filter(Boolean).sort();
+    
+    const datalist = document.getElementById('evaluators-list');
+    if (datalist) {
+        datalist.innerHTML = uniqueNames.map(nome => `<option value="${nome}">`).join('');
+    }
+}
+
     async function renderResultsScreen() {
     currentScreen = 'results';
     const app = document.getElementById('app');
@@ -791,10 +807,14 @@ async function generateRanking() {
                             Painel do Avaliador
                         </h2>
                         <div class="w-full md:w-72">
-                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Nome do Professor Avaliador</label>
-                            <input type="text" id="evaluator-name" onchange="applyEvalList()" placeholder="Digite seu nome completo..." 
-                                class="w-full p-3 bg-slate-900 border border-emerald-500/50 rounded-lg text-white text-sm focus:border-emerald-500 outline-none transition-all">
-                        </div>
+    <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Nome do Professor Avaliador</label>
+    <input type="text" id="evaluator-name" 
+        list="evaluators-list" 
+        onchange="saveEvaluatorLocal(this.value); applyEvalList();" 
+        placeholder="Digite ou selecione seu nome..." 
+        class="w-full p-3 bg-slate-900 border border-emerald-500/50 rounded-lg text-white text-sm focus:border-emerald-500 outline-none transition-all">
+    <datalist id="evaluators-list"></datalist>
+</div>
                     </div>
 
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -832,6 +852,7 @@ async function generateRanking() {
         </div>`;
     
     populateInitialEvalFilters();
+      initEvaluatorField();
 }
 
     function populateInitialEvalFilters() {
@@ -842,6 +863,25 @@ async function generateRanking() {
     document.getElementById('ev-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
     
     updateEvalFilters(); // Dispara o encadeamento para Turma e Grupo
+}
+
+    // Salva o nome no navegador e atualiza a lista global
+function saveEvaluatorLocal(nome) {
+    if (nome) {
+        localStorage.setItem('lastEvaluatorName', nome);
+    }
+}
+
+// Carrega o nome salvo anteriormente e busca a lista do banco
+async function initEvaluatorField() {
+    const savedName = localStorage.getItem('lastEvaluatorName');
+    const input = document.getElementById('evaluator-name');
+    
+    if (savedName && input) {
+        input.value = savedName;
+    }
+    
+    await loadEvaluatorsList();
 }
 
 function updateEvalFilters() {
