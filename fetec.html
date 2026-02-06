@@ -88,6 +88,8 @@
     let selectedStudentsForAssign = new Set();
     let importErrors = [];
     let isUploadCardVisible = false; // Começa oculto por padrão
+    // Verifica se a FETEC está ativa (padrão é true se for a primeira vez)
+let isFetecActive = localStorage.getItem('isFetecActive') === null ? true : localStorage.getItem('isFetecActive') === 'true';
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -174,20 +176,18 @@ async function refreshData() {
           <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all">🔓 Acessar Gestão</button>
         </form>
 
-        <div class="relative flex py-5 items-center">
-            <div class="flex-grow border-t border-slate-700"></div>
-            <span class="flex-shrink mx-4 text-slate-500 text-xs uppercase italic">ou avalie um projeto</span>
-            <div class="flex-grow border-t border-slate-700"></div>
-        </div>
-
-        <div class="space-y-4">
-          <button onclick="startPublicEvaluation()" class="w-full py-4 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
+        ${isFetecActive ? `
+    <div class="relative flex py-5 items-center">
+        <div class="flex-grow border-t border-slate-700"></div>
+        <span class="flex-shrink mx-4 text-slate-500 text-xs uppercase italic">ou avalie um projeto</span>
+        <div class="flex-grow border-t border-slate-700"></div>
+    </div>
+    <div class="space-y-4">
+        <button onclick="startPublicEvaluation()" class="w-full py-4 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
             ⭐ Avaliar FETEC
-          </button>
-          <p class="text-[10px] text-center text-slate-500 uppercase">Acesso livre para professores avaliadores</p>
-        </div>
-      </div>
-    </div>`;
+        </button>
+    </div>
+` : ''}
 
   document.getElementById('login-form').onsubmit = async (e) => {
     e.preventDefault();
@@ -227,12 +227,15 @@ async function refreshData() {
                 <button onclick="handleLogout()" class="px-4 py-2 rounded-lg font-semibold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600">🚪 Sair / Voltar</button>
             </div>
             
-            ${isAdmin ? `
+          ${isAdmin ? `
 <div class="flex flex-wrap gap-2 sm:gap-3">
     <button onclick="switchScreen('management')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gestão</button>
     <button onclick="switchScreen('attendance')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
-    <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
-    <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
+    
+    ${isFetecActive ? `
+        <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
+        <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
+    ` : ''}
 </div>
 ` : ''}
         </header>`;
@@ -403,6 +406,16 @@ async function generateRanking() {
         <div class="min-h-full p-4 md:p-8">
           <div class="max-w-7xl mx-auto">
             ${renderNavigationHeader()}
+
+            <div class="flex justify-end mb-4 no-print">
+    <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-3">
+        <span class="text-[10px] uppercase font-bold text-slate-400">Módulo FETEC</span>
+        <label class="switch scale-75">
+            <input type="checkbox" id="fetec-master-switch" onchange="toggleFetecSystem(this.checked)" ${isFetecActive ? 'checked' : ''}>
+            <span class="slider"></span>
+        </label>
+    </div>
+</div>
 
             <div class="rounded-xl shadow-lg p-6 mb-6 transition-all duration-300" style="background-color: ${config.card_color}">
     <div class="flex justify-between items-center cursor-pointer" onclick="toggleUploadCard()">
@@ -749,6 +762,17 @@ async function generateRanking() {
     }
 }
 
+    function toggleFetecSystem(active) {
+    isFetecActive = active;
+    localStorage.setItem('isFetecActive', active);
+    showToast(active ? "Sistema FETEC Ativado" : "Sistema FETEC Ocultado", "info");
+    
+    // Pequeno delay para o usuário ver o switch mudar antes de recarregar
+    setTimeout(() => {
+        location.reload(); 
+    }, 500);
+}
+
     function renderEvaluationScreen() {
     currentScreen = 'evaluation';
     const app = document.getElementById('app');
@@ -780,9 +804,9 @@ async function generateRanking() {
                             <select id="ev-serie" onchange="updateEvalFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
                         </div>
                         <div>
-                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
-                            <select id="ev-turma" onchange="updateEvalFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
-                        </div>
+    <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+    <select id="ev-turma" onchange="updateEvalFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+</div>
                         <div>
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
                             <select id="ev-lado" onchange="applyEvalList()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
@@ -821,16 +845,30 @@ function updateEvalFilters() {
     const s = document.getElementById('ev-sede').value;
     const sr = document.getElementById('ev-serie').value;
     
+    // 1. Filtra a base de alunos conforme Sede e Série selecionadas
     const listaFiltrada = allStudents.filter(x => x.sede === s && x.serie === sr);
     
+    // 2. Extrai Turmas e Grupos Únicos desta combinação
     const turmas = [...new Set(listaFiltrada.map(x => x.nome_turma))].sort();
     const grupos = [...new Set(listaFiltrada.filter(x => x.grupo).map(x => x.grupo))].sort((a,b) => a - b);
 
-    document.getElementById('ev-turma').innerHTML = turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    // 3. Atualiza o Select de Turmas
+    const selectTurma = document.getElementById('ev-turma');
+    const turmaAnterior = selectTurma.value; // Tenta manter a turma se ela ainda existir na nova série
+    
+    selectTurma.innerHTML = turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    
+    // Se a turma selecionada antes ainda existe na nova série, mantém. Senão, pega a primeira.
+    if (turmas.includes(turmaAnterior)) {
+        selectTurma.value = turmaAnterior;
+    }
+
+    // 4. Atualiza o Select de Grupos
     document.getElementById('ev-grupo').innerHTML = '<option value="todos">Todos os Grupos</option>' + 
                                                      grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
     
-    applyEvalList(); // Esta função será o Passo 4 (Cérebro da tela)
+    // 5. Atualiza a lista de cards na tela
+    applyEvalList();
 }
 
     // --- COMPONENTES REUTILIZÁVEIS ---
