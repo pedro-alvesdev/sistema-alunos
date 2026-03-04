@@ -459,40 +459,50 @@ async function generateRanking() {
     const serie = document.getElementById('res-serie').value;
     const container = document.getElementById('results-content');
 
-    showLoading("Gerando Ranking...");
+    if (!sede || !serie) return;
 
-    // 1. Busca TODAS as notas da sede/série selecionada
+    showLoading("Processando notas...");
+
+    // 1. Busca notas filtrando por SEDE, SÉRIE e a DISCIPLINA ATUAL
     const { data: evals, error } = await _supabase
         .from('evaluations_fetec')
         .select('*')
         .eq('sede', sede)
-        .eq('serie', serie);
+        .eq('serie', serie)
+        .eq('disciplina', currentLab); // Este é o filtro principal agora
 
     if (error) {
-        hideLoading();
-        return console.error(error);
-    }
-
-    // 2. Filtra localmente com base no Laboratório selecionado no momento
-    // Isso garante que você veja os resultados certos mesmo que o nome do admin mude
-    const evalsFiltradas = evals.filter(e => {
-        if (currentLab === 'maker') return e.usuario_sistema === 'admin_maker' || e.usuario_sistema === 'admin';
-        return e.usuario_sistema === 'admin_ciencias';
-    });
-
-    if (evalsFiltradas.length === 0) {
-        container.innerHTML = `<p class="text-slate-500 text-center py-20 italic">Nenhum resultado encontrado para ${currentLab.toUpperCase()} nesta categoria.</p>`;
+        console.error("Erro na busca:", error);
         hideLoading();
         return;
     }
 
-    // 3. Processamento do Ranking (Média aritmética das 5 notas)
+    // DIAGNÓSTICO: Verifique no F12 se os dados chegaram
+    console.log(`Notas encontradas para ${currentLab}:`, evals);
+
+    if (!evals || evals.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+                <p class="text-slate-500 italic">Nenhuma nota encontrada em ${currentLab.toUpperCase()} para ${sede} - ${serie}.</p>
+                <p class="text-slate-600 text-[10px] mt-2 uppercase tracking-widest">Dica: Verifique se as notas foram dadas neste laboratório.</p>
+            </div>`;
+        hideLoading();
+        return;
+    }
+
+    // 2. Processamento (Agrupamento e Médias)
     const processado = {};
-    evalsFiltradas.forEach(e => {
-        const key = e.ra_aluno || `Grupo ${e.grupo} (${e.nome_turma})`;
+    evals.forEach(e => {
+        // Define a chave: se tiver RA é individual, senão usa o número do Grupo
+        const key = e.ra_aluno ? 
+            (allStudents.find(s => s.ra === e.ra_aluno)?.nome_aluno || e.ra_aluno) : 
+            `Grupo ${e.grupo} (${e.nome_turma})`;
+
         if (!processado[key]) {
             processado[key] = { nome: key, avaliacoes: [], turma: e.nome_turma };
         }
+        
+        // Média das 5 competências
         const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
         processado[key].avaliacoes.push(mediaIndiv);
     });
@@ -503,40 +513,37 @@ async function generateRanking() {
         return obj;
     }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-    // 4. Renderização com cores dinâmicas
+    // 3. Renderização Visual
     const colorClass = currentLab === 'maker' ? 'text-blue-400' : 'text-emerald-400';
-    const borderColor = currentLab === 'maker' ? 'border-blue-500/30' : 'border-emerald-500/30';
     
     container.innerHTML = `
-        <section class="bg-slate-900 p-6 rounded-2xl border ${borderColor} shadow-2xl">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="${colorClass} font-black uppercase text-sm tracking-widest">🏆 Ranking de Notas - ${currentLab}</h2>
-                <span class="bg-slate-800 text-slate-400 text-[10px] px-3 py-1 rounded-full border border-slate-700">Total: ${ranking.length} projetos</span>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs text-slate-300">
-                    <thead>
-                        <tr class="border-b border-slate-800 text-slate-500 uppercase text-[10px]">
-                            <th class="p-3">Pos.</th>
-                            <th class="p-3">Equipe / Aluno</th>
-                            <th class="p-3">Turma</th>
-                            <th class="p-3 text-right">Média</th>
+        <section class="bg-slate-900 p-6 rounded-2xl border border-slate-700 shadow-2xl">
+            <h2 class="${colorClass} font-bold mb-4 uppercase text-xs tracking-widest flex justify-between">
+                <span>🏆 Ranking Final: ${currentLab}</span>
+                <span class="text-slate-500">${ranking.length} Projetos</span>
+            </h2>
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="text-slate-500 border-b border-slate-800">
+                        <th class="p-2">Pos.</th>
+                        <th class="p-2">Nome / Grupo</th>
+                        <th class="p-2">Turma</th>
+                        <th class="p-2 text-right">Média</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${ranking.map((r, idx) => `
+                        <tr class="border-b border-slate-800/50 hover:bg-slate-800/30">
+                            <td class="p-2 font-mono text-slate-500">${idx + 1}º</td>
+                            <td class="p-2 font-bold text-white">${r.nome}</td>
+                            <td class="p-2 text-slate-400">${r.turma}</td>
+                            <td class="p-2 text-right font-black ${colorClass}">${r.mediaFinal.toFixed(2)}</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        ${ranking.map((r, idx) => `
-                            <tr class="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                                <td class="p-3 font-mono ${idx < 3 ? 'text-yellow-500 font-bold' : 'text-slate-500'}">${idx + 1}º</td>
-                                <td class="p-3 font-bold text-white">${r.nome}</td>
-                                <td class="p-3 text-slate-400">${r.turma}</td>
-                                <td class="p-3 text-right font-black text-base ${colorClass}">${r.mediaFinal.toFixed(2)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
+                    `).join('')}
+                </tbody>
+            </table>
         </section>`;
-    
+
     hideLoading();
 }
 
