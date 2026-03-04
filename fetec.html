@@ -153,51 +153,48 @@
 
     // --- CARREGAMENTO DE DADOS ---
 async function refreshData() {
-    // 1. Inicia a tela de carregamento
     showLoading("Iniciando sincronização...");
     const progressEl = document.getElementById('loader-progress');
 
     try {
-        // --- PARTE 1: BUSCA DE ALUNOS (Com Progresso Real) ---
         let allFetchedStudents = [];
         let page = 0;
         const pageSize = 1000;
         let lastCount = 0;
-        
-        // Estimativa baseada no seu volume de 2000 alunos
-        const totalEstimado = 2000; 
 
+        // --- BUSCA DE ALUNOS ---
         do {
-            const { data, error, count } = await _supabase
+            // Buscamos os alunos. Nota: removi o 'count: exact' temporariamente para acelerar a resposta do banco
+            const { data, error } = await _supabase
                 .from('students')
-                .select('*', { count: 'exact' }) // Pede o total exato para o cálculo
+                .select('*')
                 .range(page * pageSize, (page + 1) * pageSize - 1);
 
-            if (error) throw error;
+            if (error) {
+                console.error("Erro Supabase Alunos:", error);
+                break; 
+            }
+
+            if (!data) break;
 
             allFetchedStudents = allFetchedStudents.concat(data);
             lastCount = data.length;
             page++;
 
-            // Atualiza o texto de progresso na tela de loading
-            const totalReal = count || totalEstimado;
-            const porcentagem = Math.min(Math.round((allFetchedStudents.length / totalReal) * 100), 90);
-            progressEl.innerText = `Carregando Alunos... ${porcentagem}%`;
-
+            progressEl.innerText = `Carregando Alunos... ${allFetchedStudents.length}`;
         } while (lastCount === pageSize);
 
         allStudents = allFetchedStudents;
 
-        // --- PARTE 2: BUSCA DE VÍNCULOS (Lado/Grupo) ---
+        // --- BUSCA DE VÍNCULOS ---
         progressEl.innerText = "Configurando Laboratórios...";
         const { data: assignData, error: assignError } = await _supabase
             .from('lab_assignments')
             .select('*');
 
-        if (assignError) throw assignError;
-        allAssignments = assignData;
+        if (!assignError) allAssignments = assignData;
 
-        // --- PARTE 3: BUSCA DE FREQUÊNCIA ---
+        // --- BUSCA DE FREQUÊNCIA ---
         progressEl.innerText = "Sincronizando Presenças...";
         const dKey = selectedDate.toISOString().split('T')[0];
         const { data: attData, error: attError } = await _supabase
@@ -205,32 +202,26 @@ async function refreshData() {
             .select('*')
             .eq('data_presenca', dKey);
 
-        if (attError) throw attError;
-        allAttendances = attData;
+        if (!attError) allAttendances = attData;
 
-        // --- PARTE 4: ATUALIZAÇÃO DA INTERFACE ---
-        progressEl.innerText = "Finalizando...";
+        // --- FINALIZAÇÃO ---
+        progressEl.innerText = "Renderizando interface...";
         
+        // Aplica os filtros para garantir que a lista 'filteredStudents' seja populada
         if (currentScreen === 'management') {
-            updateFilterOptions('management');
-            applyFilters();
+            applyFilters(); 
         } else if (currentScreen === 'attendance') {
-            updateFilterOptions('attendance');
             applyAttendanceFilters();
-        } else if (currentScreen === 'evaluation') {
-            applyEvalList();
         }
 
-        showToast("Dados sincronizados!", "success");
-
     } catch (err) {
-        console.error("Erro no refreshData:", err);
-        showToast("Erro ao sincronizar dados.", "error");
+        console.error("Erro crítico no refreshData:", err);
+        showToast("Erro de conexão. Tente recarregar.", "error");
     } finally {
-        // Independentemente de erro ou sucesso, esconde o loading após um breve delay
+        // GARANTIA: Esconde o loading de qualquer jeito após 1 segundo
         setTimeout(() => {
             hideLoading();
-        }, 500);
+        }, 1000);
     }
 }
 
@@ -300,17 +291,23 @@ async function refreshData() {
       };
     }
 
-    function showLoading(msg = "Sincronizando Laboratório...") {
+   function showLoading(msg = "Sincronizando Laboratório...") {
     const overlay = document.getElementById('loading-overlay');
+    if (!overlay) return;
     document.getElementById('loader-progress').innerText = msg;
     overlay.classList.remove('hidden');
     overlay.style.opacity = "1";
+    overlay.style.display = "flex"; // Garante que o flex seja aplicado
 }
 
 function hideLoading() {
     const overlay = document.getElementById('loading-overlay');
+    if (!overlay) return;
     overlay.style.opacity = "0";
-    setTimeout(() => overlay.classList.add('hidden'), 500);
+    setTimeout(() => {
+        overlay.classList.add('hidden');
+        overlay.style.display = "none";
+    }, 500);
 }
 
     async function startPublicEvaluation() {
