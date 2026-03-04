@@ -445,10 +445,13 @@ async function updateDateFromPicker(val) {
     // Popula filtros de resultados
     const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
     const series = [...new Set(allStudents.map(s => s.serie))].sort();
-    document.getElementById('res-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+   document.getElementById('res-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
     document.getElementById('res-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
     
-    generateRanking();
+    // IMPORTANTE: Dispara o ranking assim que a tela abre
+    setTimeout(() => {
+        generateRanking();
+    }, 100);
 }
 
 async function generateRanking() {
@@ -456,74 +459,85 @@ async function generateRanking() {
     const serie = document.getElementById('res-serie').value;
     const container = document.getElementById('results-content');
 
-    // 1. Busca avaliações filtrando pela SEDE, SÉRIE e pela DISCIPLINA ATUAL
+    showLoading("Gerando Ranking...");
+
+    // 1. Busca TODAS as notas da sede/série selecionada
     const { data: evals, error } = await _supabase
         .from('evaluations_fetec')
         .select('*')
         .eq('sede', sede)
-        .eq('serie', serie)
-        .eq('usuario_sistema', currentUser.includes('maker') ? 'admin_maker' : 'admin_ciencias'); 
-        // Ou use uma lógica baseada em currentLab se você salvou a disciplina no payload de salvar nota
+        .eq('serie', serie);
 
-    if (error) return console.error(error);
+    if (error) {
+        hideLoading();
+        return console.error(error);
+    }
 
-    // 2. Processamento (Agrupar por Aluno ou Grupo)
+    // 2. Filtra localmente com base no Laboratório selecionado no momento
+    // Isso garante que você veja os resultados certos mesmo que o nome do admin mude
+    const evalsFiltradas = evals.filter(e => {
+        if (currentLab === 'maker') return e.usuario_sistema === 'admin_maker' || e.usuario_sistema === 'admin';
+        return e.usuario_sistema === 'admin_ciencias';
+    });
+
+    if (evalsFiltradas.length === 0) {
+        container.innerHTML = `<p class="text-slate-500 text-center py-20 italic">Nenhum resultado encontrado para ${currentLab.toUpperCase()} nesta categoria.</p>`;
+        hideLoading();
+        return;
+    }
+
+    // 3. Processamento do Ranking (Média aritmética das 5 notas)
     const processado = {};
-    evals.forEach(e => {
+    evalsFiltradas.forEach(e => {
         const key = e.ra_aluno || `Grupo ${e.grupo} (${e.nome_turma})`;
         if (!processado[key]) {
-            processado[key] = { 
-                nome: key, 
-                avaliacoes: [], 
-                apto: false,
-                turma: e.nome_turma
-            };
+            processado[key] = { nome: key, avaliacoes: [], turma: e.nome_turma };
         }
         const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
-        processado[key].avaliacoes.push({ prof: e.nome_professor, media: mediaIndiv });
-        if (e.apto_fetec) processado[key].apto = true;
+        processado[key].avaliacoes.push(mediaIndiv);
     });
 
     const ranking = Object.values(processado).map(obj => {
-        const somaMedias = obj.avaliacoes.reduce((acc, a) => acc + a.media, 0);
-        obj.mediaFinal = somaMedias / obj.avaliacoes.length;
+        const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
+        obj.mediaFinal = soma / obj.avaliacoes.length;
         return obj;
     }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-    // 3. Renderização das Tabelas (Com cores dinâmicas)
+    // 4. Renderização com cores dinâmicas
     const colorClass = currentLab === 'maker' ? 'text-blue-400' : 'text-emerald-400';
+    const borderColor = currentLab === 'maker' ? 'border-blue-500/30' : 'border-emerald-500/30';
     
     container.innerHTML = `
-        <div class="text-center mb-4 no-print">
-            <span class="px-4 py-1 rounded-full border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Exibindo Resultados de: ${currentLab.toUpperCase()}
-            </span>
-        </div>
-        
-        <section class="bg-slate-900 p-6 rounded-2xl border border-slate-700 shadow-2xl">
-            <h2 class="${colorClass} font-bold mb-4 uppercase text-sm tracking-widest">📋 Ranking de Notas</h2>
+        <section class="bg-slate-900 p-6 rounded-2xl border ${borderColor} shadow-2xl">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="${colorClass} font-black uppercase text-sm tracking-widest">🏆 Ranking de Notas - ${currentLab}</h2>
+                <span class="bg-slate-800 text-slate-400 text-[10px] px-3 py-1 rounded-full border border-slate-700">Total: ${ranking.length} projetos</span>
+            </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs text-slate-300">
                     <thead>
-                        <tr class="border-b border-slate-700">
-                            <th class="p-2">Equipe/Aluno</th>
-                            <th class="p-2">Turma</th>
-                            <th class="p-2">Média Final</th>
+                        <tr class="border-b border-slate-800 text-slate-500 uppercase text-[10px]">
+                            <th class="p-3">Pos.</th>
+                            <th class="p-3">Equipe / Aluno</th>
+                            <th class="p-3">Turma</th>
+                            <th class="p-3 text-right">Média</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${ranking.map((r, idx) => `
-                            <tr class="border-b border-slate-800 hover:bg-slate-800/30">
-                                <td class="p-2 font-bold text-white">${idx + 1}º - ${r.nome}</td>
-                                <td class="p-2">${r.turma}</td>
-                                <td class="p-2 font-black ${colorClass}">${r.mediaFinal.toFixed(2)}</td>
+                            <tr class="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                                <td class="p-3 font-mono ${idx < 3 ? 'text-yellow-500 font-bold' : 'text-slate-500'}">${idx + 1}º</td>
+                                <td class="p-3 font-bold text-white">${r.nome}</td>
+                                <td class="p-3 text-slate-400">${r.turma}</td>
+                                <td class="p-3 text-right font-black text-base ${colorClass}">${r.mediaFinal.toFixed(2)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>
-        </section>
-    `;
+        </section>`;
+    
+    hideLoading();
 }
 
     // --- TELA: GERENCIAMENTO ---
