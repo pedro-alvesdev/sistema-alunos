@@ -191,35 +191,35 @@ async function refreshData() {
           </div>
         </div>`;
 
-      // Esta parte deve ficar FORA das crases da innerHTML
-      document.getElementById('login-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const code = document.getElementById('access-code').value;
+      // Configura o evento de submit IMEDIATAMENTE após inserir o HTML
+      const form = document.getElementById('login-form');
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const code = document.getElementById('access-code').value;
 
-    // Aceita as duas senhas administrativas
-    if (code === '123456' || code === '456789') {
-        isAuthenticated = true;
-        
-        if (code === '123456') {
-            currentLab = 'maker';
-            currentUser = 'admin_maker';
+        if (code === '123456' || code === '456789') {
+            isAuthenticated = true;
+            
+            if (code === '123456') {
+                currentLab = 'maker';
+                currentUser = 'admin_maker';
+            } else {
+                currentLab = 'ciencias';
+                currentUser = 'admin_ciencias';
+            }
+
+            sessionStorage.setItem('isAuth', 'true');
+            sessionStorage.setItem('currentLab', currentLab);
+            sessionStorage.setItem('userRole', currentUser);
+            
+            showToast(`Bem-vindo! Modo: ${currentLab.toUpperCase()}`, "success");
+            
+            await refreshData();
+            switchScreen('management');
         } else {
-            currentLab = 'ciencias';
-            currentUser = 'admin_ciencias';
+            showToast("Código inválido!", "error");
         }
-
-        // Salva na sessão para manter o contexto após F5
-        sessionStorage.setItem('isAuth', 'true');
-        sessionStorage.setItem('currentLab', currentLab);
-        sessionStorage.setItem('userRole', currentUser);
-        
-        showToast(`Bem-vindo! Modo: ${currentLab.toUpperCase()}`, "success");
-        await refreshData();
-        switchScreen('management');
-    } else {
-        showToast("Código inválido!", "error");
-    }
-};
+      };
     }
 
     async function startPublicEvaluation() {
