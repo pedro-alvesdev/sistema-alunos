@@ -64,9 +64,55 @@
         color: black !important;
     }
 }
+    /* Tela de Carregamento */
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0f172a; /* Cor slate-900 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s ease;
+}
+
+.loader-spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid #1e293b;
+    border-top: 5px solid #3b82f6; /* Azul Maker */
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loader-text {
+    margin-top: 20px;
+    color: #f8fafc;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.loader-sub {
+    color: #64748b;
+    font-size: 11px;
+    margin-top: 8px;
+}
   </style>
 </head>
 <body class="h-full">
+  <div id="loading-overlay" class="hidden">
+    <div class="loader-spinner"></div>
+    <p class="loader-text">Sincronizando Laboratório...</p>
+    <p id="loader-progress" class="loader-sub">Aguarde um momento</p>
+</div>
   <div id="app" class="w-full h-full overflow-auto bg-gradient-to-br from-indigo-50 to-blue-50"></div>
 
   <script>
@@ -107,52 +153,84 @@
 
     // --- CARREGAMENTO DE DADOS ---
 async function refreshData() {
-    showToast("Sincronizando banco de dados...", "info");
-    
-    // 1. BUSCA DE ALUNOS (Dados Fixos: Nome, RA, Turma)
-    // (Mantenha o seu loop de busca em blocos de 1000 que já existe no seu código)
-    let allFetchedStudents = [];
-    let page = 0;
-    const pageSize = 1000;
-    let lastCount = 0;
+    // 1. Inicia a tela de carregamento
+    showLoading("Iniciando sincronização...");
+    const progressEl = document.getElementById('loader-progress');
 
-    do {
-        const { data, error } = await _supabase
-            .from('students')
+    try {
+        // --- PARTE 1: BUSCA DE ALUNOS (Com Progresso Real) ---
+        let allFetchedStudents = [];
+        let page = 0;
+        const pageSize = 1000;
+        let lastCount = 0;
+        
+        // Estimativa baseada no seu volume de 2000 alunos
+        const totalEstimado = 2000; 
+
+        do {
+            const { data, error, count } = await _supabase
+                .from('students')
+                .select('*', { count: 'exact' }) // Pede o total exato para o cálculo
+                .range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (error) throw error;
+
+            allFetchedStudents = allFetchedStudents.concat(data);
+            lastCount = data.length;
+            page++;
+
+            // Atualiza o texto de progresso na tela de loading
+            const totalReal = count || totalEstimado;
+            const porcentagem = Math.min(Math.round((allFetchedStudents.length / totalReal) * 100), 90);
+            progressEl.innerText = `Carregando Alunos... ${porcentagem}%`;
+
+        } while (lastCount === pageSize);
+
+        allStudents = allFetchedStudents;
+
+        // --- PARTE 2: BUSCA DE VÍNCULOS (Lado/Grupo) ---
+        progressEl.innerText = "Configurando Laboratórios...";
+        const { data: assignData, error: assignError } = await _supabase
+            .from('lab_assignments')
+            .select('*');
+
+        if (assignError) throw assignError;
+        allAssignments = assignData;
+
+        // --- PARTE 3: BUSCA DE FREQUÊNCIA ---
+        progressEl.innerText = "Sincronizando Presenças...";
+        const dKey = selectedDate.toISOString().split('T')[0];
+        const { data: attData, error: attError } = await _supabase
+            .from('attendance')
             .select('*')
-            .range(page * pageSize, (page + 1) * pageSize - 1);
-        if (error) break;
-        allFetchedStudents = allFetchedStudents.concat(data);
-        lastCount = data.length;
-        page++;
-    } while (lastCount === pageSize);
+            .eq('data_presenca', dKey);
 
-    // 2. NOVA BUSCA: VÍNCULOS DE LABORATÓRIO (Lado e Grupo)
-    // Aqui buscamos a tabela que criamos no Passo 1
-    const { data: assignData, error: assignError } = await _supabase
-        .from('lab_assignments')
-        .select('*');
+        if (attError) throw attError;
+        allAttendances = attData;
 
-    if (assignError) {
-        console.error("Erro ao carregar vínculos:", assignError);
-        showToast("Erro ao carregar grupos", "error");
-    } else {
-        // Guardamos todos os vínculos na variável global
-        allAssignments = assignData; 
-    }
+        // --- PARTE 4: ATUALIZAÇÃO DA INTERFACE ---
+        progressEl.innerText = "Finalizando...";
+        
+        if (currentScreen === 'management') {
+            updateFilterOptions('management');
+            applyFilters();
+        } else if (currentScreen === 'attendance') {
+            updateFilterOptions('attendance');
+            applyAttendanceFilters();
+        } else if (currentScreen === 'evaluation') {
+            applyEvalList();
+        }
 
-    // 3. BUSCA DE FREQUÊNCIA (Opcional: Podemos adicionar o filtro de Lab aqui depois)
-    // (Mantenha a sua lógica de busca de attendance atual)
-    
-    // 4. ATUALIZAÇÃO DA MEMÓRIA LOCAL
-    allStudents = allFetchedStudents;
-    
-    // 5. ATUALIZAÇÃO DA TELA
-    if (currentScreen === 'management') {
-        updateFilterOptions('management');
-        applyFilters();
-    } else if (currentScreen === 'evaluation') {
-        updateEvalFilters();
+        showToast("Dados sincronizados!", "success");
+
+    } catch (err) {
+        console.error("Erro no refreshData:", err);
+        showToast("Erro ao sincronizar dados.", "error");
+    } finally {
+        // Independentemente de erro ou sucesso, esconde o loading após um breve delay
+        setTimeout(() => {
+            hideLoading();
+        }, 500);
     }
 }
 
@@ -221,6 +299,19 @@ async function refreshData() {
         }
       };
     }
+
+    function showLoading(msg = "Sincronizando Laboratório...") {
+    const overlay = document.getElementById('loading-overlay');
+    document.getElementById('loader-progress').innerText = msg;
+    overlay.classList.remove('hidden');
+    overlay.style.opacity = "1";
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loading-overlay');
+    overlay.style.opacity = "0";
+    setTimeout(() => overlay.classList.add('hidden'), 500);
+}
 
     async function startPublicEvaluation() {
     isAuthenticated = false; // Define que não é o administrador
