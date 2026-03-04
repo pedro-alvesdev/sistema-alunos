@@ -295,18 +295,20 @@ async function refreshData() {
     const overlay = document.getElementById('loading-overlay');
     if (!overlay) return;
     document.getElementById('loader-progress').innerText = msg;
+    
+    overlay.style.display = "flex"; // Força a exibição
     overlay.classList.remove('hidden');
-    overlay.style.opacity = "1";
-    overlay.style.display = "flex"; // Garante que o flex seja aplicado
+    setTimeout(() => { overlay.style.opacity = "1"; }, 10);
 }
 
 function hideLoading() {
     const overlay = document.getElementById('loading-overlay');
     if (!overlay) return;
+    
     overlay.style.opacity = "0";
     setTimeout(() => {
         overlay.classList.add('hidden');
-        overlay.style.display = "none";
+        overlay.style.display = "none"; // Remove do caminho dos cliques
     }, 500);
 }
 
@@ -1803,14 +1805,24 @@ function quickSelectHalf() {
 }
 
     // --- INICIALIZAÇÃO ---
-    window.onload = () => {
-    if(sessionStorage.getItem('isAuth') === 'true') {
+   window.onload = () => {
+    const isAuth = sessionStorage.getItem('isAuth');
+    
+    if (isAuth === 'true') {
+        // Se já estava logado, carrega os dados e mostra a gestão
         isAuthenticated = true;
         currentLab = sessionStorage.getItem('currentLab') || 'maker';
         currentUser = sessionStorage.getItem('userRole') || 'admin_maker';
-        refreshData().then(() => renderManagementScreen());
+        
+        // O refreshData chamará o showLoading() automaticamente
+        refreshData().then(() => {
+            switchScreen('management');
+        });
     } else {
+        // Se NÃO está logado, apenas mostra a tela de login
+        // SEM chamar o refreshData antes da hora
         showLoginScreen();
+        hideLoading(); // Garante que o overlay suma se aparecer por erro
     }
 };
 
