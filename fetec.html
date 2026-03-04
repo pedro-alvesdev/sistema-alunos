@@ -459,92 +459,128 @@ async function generateRanking() {
     const serie = document.getElementById('res-serie').value;
     const container = document.getElementById('results-content');
 
+    // Validação básica de filtros
     if (!sede || !serie) return;
 
-    showLoading("Processando notas...");
+    showLoading("Organizando resultados...");
 
-    // 1. Busca notas filtrando por SEDE, SÉRIE e a DISCIPLINA ATUAL
-    const { data: evals, error } = await _supabase
-        .from('evaluations_fetec')
-        .select('*')
-        .eq('sede', sede)
-        .eq('serie', serie)
-        .eq('disciplina', currentLab); // Este é o filtro principal agora
+    try {
+        // 1. Busca no banco filtrando pela disciplina ativa (Maker ou Ciências)
+        const { data: evals, error } = await _supabase
+            .from('evaluations_fetec')
+            .select('*')
+            .eq('sede', sede)
+            .eq('serie', serie)
+            .eq('disciplina', currentLab);
 
-    if (error) {
-        console.error("Erro na busca:", error);
-        hideLoading();
-        return;
-    }
+        if (error) throw error;
 
-    // DIAGNÓSTICO: Verifique no F12 se os dados chegaram
-    console.log(`Notas encontradas para ${currentLab}:`, evals);
+        // Se não houver notas, avisa o usuário e interrompe
+        if (!evals || evals.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-20 bg-slate-900/40 rounded-2xl border border-dashed border-slate-700">
+                    <p class="text-slate-500 italic">Nenhum resultado encontrado para ${currentLab.toUpperCase()} em ${sede} - ${serie}.</p>
+                </div>`;
+            return;
+        }
 
-    if (!evals || evals.length === 0) {
-        container.innerHTML = `
-            <div class="text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
-                <p class="text-slate-500 italic">Nenhuma nota encontrada em ${currentLab.toUpperCase()} para ${sede} - ${serie}.</p>
-                <p class="text-slate-600 text-[10px] mt-2 uppercase tracking-widest">Dica: Verifique se as notas foram dadas neste laboratório.</p>
-            </div>`;
-        hideLoading();
-        return;
-    }
+        // 2. Processamento de dados (Agrupamento por Aluno/Grupo e Cálculo de Médias)
+        const processado = {};
 
-    // 2. Processamento (Agrupamento e Médias)
-    const processado = {};
-    evals.forEach(e => {
-        // Define a chave: se tiver RA é individual, senão usa o número do Grupo
-        const key = e.ra_aluno ? 
-            (allStudents.find(s => s.ra === e.ra_aluno)?.nome_aluno || e.ra_aluno) : 
-            `Grupo ${e.grupo} (${e.nome_turma})`;
+        evals.forEach(e => {
+            // Define o nome de exibição: Nome do Aluno (se individual) ou Nome do Grupo
+            let nomeExibicao = "";
+            if (e.ra_aluno) {
+                const alunoObj = allStudents.find(s => s.ra === e.ra_aluno);
+                nomeExibicao = alunoObj ? alunoObj.nome_aluno : `RA: ${e.ra_aluno}`;
+            } else {
+                nomeExibicao = `Grupo ${e.grupo}`;
+            }
 
-        if (!processado[key]) {
-            processado[key] = { nome: key, avaliacoes: [], turma: e.nome_turma };
+            const key = e.ra_aluno || `grupo-${e.grupo}-${e.nome_turma}`;
+
+            if (!processado[key]) {
+                processado[key] = { 
+                    nome: nomeExibicao, 
+                    avaliacoes: [], 
+                    turma: e.nome_turma,
+                    apto: e.apto_fetec 
+                };
+            }
+            
+            // Média das 5 competências avaliadas
+            const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
+            processado[key].avaliacoes.push(mediaIndiv);
+            
+            // Se pelo menos um professor marcou como apto, ele entra na lista de aptos
+            if (e.apto_fetec) processado[key].apto = true;
+        });
+
+        // 3. Converte o objeto em array e calcula a média final (caso haja mais de um avaliador)
+        const todos = Object.values(processado).map(obj => {
+            const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
+            obj.mediaFinal = soma / obj.avaliacoes.length;
+            return obj;
+        }).sort((a, b) => b.mediaFinal - a.mediaFinal); // Ordena do maior para o menor
+
+        // 4. Separação em duas listas: Selecionados (Aptos) e Geral
+        const listaAptos = todos.filter(r => r.apto === true);
+        const listaGeral = todos.filter(r => r.apto !== true);
+
+        // 5. Renderização Final
+        let htmlFinal = '';
+        
+        if (listaAptos.length > 0) {
+            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC (${currentLab.toUpperCase()})`, "border-amber-500/50 bg-amber-500/5", "text-amber-400");
         }
         
-        // Média das 5 competências
-        const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
-        processado[key].avaliacoes.push(mediaIndiv);
-    });
+        if (listaGeral.length > 0) {
+            htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
+        }
 
-    const ranking = Object.values(processado).map(obj => {
-        const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
-        obj.mediaFinal = soma / obj.avaliacoes.length;
-        return obj;
-    }).sort((a, b) => b.mediaFinal - a.mediaFinal);
+        container.innerHTML = htmlFinal;
 
-    // 3. Renderização Visual
-    const colorClass = currentLab === 'maker' ? 'text-blue-400' : 'text-emerald-400';
-    
-    container.innerHTML = `
-        <section class="bg-slate-900 p-6 rounded-2xl border border-slate-700 shadow-2xl">
-            <h2 class="${colorClass} font-bold mb-4 uppercase text-xs tracking-widest flex justify-between">
-                <span>🏆 Ranking Final: ${currentLab}</span>
-                <span class="text-slate-500">${ranking.length} Projetos</span>
-            </h2>
-            <table class="w-full text-left text-xs">
-                <thead>
-                    <tr class="text-slate-500 border-b border-slate-800">
-                        <th class="p-2">Pos.</th>
-                        <th class="p-2">Nome / Grupo</th>
-                        <th class="p-2">Turma</th>
-                        <th class="p-2 text-right">Média</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${ranking.map((r, idx) => `
-                        <tr class="border-b border-slate-800/50 hover:bg-slate-800/30">
-                            <td class="p-2 font-mono text-slate-500">${idx + 1}º</td>
-                            <td class="p-2 font-bold text-white">${r.nome}</td>
-                            <td class="p-2 text-slate-400">${r.turma}</td>
-                            <td class="p-2 text-right font-black ${colorClass}">${r.mediaFinal.toFixed(2)}</td>
+    } catch (err) {
+        console.error("Erro crítico no Ranking:", err);
+        showToast("Falha ao processar notas do banco.", "error");
+    } finally {
+        // ESSENCIAL: Esconde o loading independente de erro ou sucesso
+        hideLoading();
+    }
+}
+
+// Função auxiliar para gerar o HTML das tabelas (mantém o código limpo)
+function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
+    return `
+        <div class="rounded-2xl border ${bordaEstilo} p-6 mb-8 shadow-2xl">
+            <h3 class="${textoEstilo} font-black text-xs uppercase tracking-widest mb-4 flex justify-between">
+                <span>${titulo}</span>
+                <span class="opacity-50 text-[10px]">${dados.length} registros</span>
+            </h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="text-slate-500 border-b border-slate-800">
+                            <th class="p-3 w-12">Pos.</th>
+                            <th class="p-3">Equipe / Aluno</th>
+                            <th class="p-3">Turma</th>
+                            <th class="p-3 text-right">Média</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </section>`;
-
-    hideLoading();
+                    </thead>
+                    <tbody>
+                        ${dados.map((r, idx) => `
+                            <tr class="border-b border-slate-800/40 hover:bg-white/5 transition-colors">
+                                <td class="p-3 font-mono text-slate-500">${idx + 1}º</td>
+                                <td class="p-3 font-bold text-white uppercase">${r.nome}</td>
+                                <td class="p-3 text-slate-400 italic">${r.turma}</td>
+                                <td class="p-3 text-right font-black text-sm ${textoEstilo}">${r.mediaFinal.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
 }
 
     // --- TELA: GERENCIAMENTO ---
