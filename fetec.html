@@ -517,10 +517,15 @@ async function generateRanking() {
 
     if (!sede || !serie) return;
 
-    showLoading("Organizando ranking detalhado...");
+    // Limpeza inicial para evitar "fantasmas" de buscas anteriores
+    container.innerHTML = `
+        <div class="text-center py-20">
+            <div class="loader-spinner mx-auto mb-4"></div>
+            <p class="text-slate-500 italic">Consolidando notas de ${sede}...</p>
+        </div>`;
 
     try {
-        // 1. Consulta ao Supabase com filtros de Sede, Série e Disciplina ativa
+        // 1. Busca todas as avaliações da Sede e Série (independente de quem avaliou)
         let query = _supabase
             .from('evaluations_fetec')
             .select('*')
@@ -528,7 +533,6 @@ async function generateRanking() {
             .eq('serie', serie)
             .eq('disciplina', currentLab);
 
-        // Se o usuário filtrou por um lado específico, adiciona à query
         if (ladoFiltro !== 'todos') {
             query = query.eq('lado', ladoFiltro);
         }
@@ -540,7 +544,7 @@ async function generateRanking() {
         if (!evals || evals.length === 0) {
             container.innerHTML = `
                 <div class="text-center py-20 bg-slate-900/40 rounded-2xl border border-dashed border-slate-700">
-                    <p class="text-slate-500 italic">Nenhum resultado encontrado para este filtro.</p>
+                    <p class="text-slate-500 italic">Nenhum resultado encontrado para esta configuração.</p>
                 </div>`;
             return;
         }
@@ -548,72 +552,82 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-            // CHAVE ÚNICA: Garante que Lado A e Lado B sejam linhas diferentes no ranking
-            const key = e.ra_aluno ? e.ra_aluno : `g${e.grupo}-L${e.lado}-${e.nome_turma}`;
+            // CHAVE DE AGRUPAMENTO: Sede + Turma + Lado + Grupo/RA
+            // Isso garante que o Grupo 1 do Lado A seja diferente do Grupo 1 do Lado B
+            const key = e.ra_aluno 
+                ? e.ra_aluno 
+                : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
             if (!processado[key]) {
                 let identificacao = "";
                 
                 if (e.ra_aluno) {
-                    // Busca nome individual
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca integrantes do grupo filtrando por GRUPO E LADO
+                    // Busca integrantes oficiais do grupo para exibição
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
 
                     const integrantes = allStudents
-                        .filter(s => rasNoGrupo.includes(s.ra) && s.nome_turma === e.nome_turma)
+                        .filter(s => rasNoGrupo.includes(s.ra) && s.sede === e.sede && s.nome_turma === e.nome_turma)
                         .map(s => s.nome_aluno)
                         .sort()
                         .join(', ');
                     
-                    identificacao = `Lado ${e.lado} - Grupo ${e.grupo}: ${integrantes || 'Integrantes não localizados'}`;
+                    identificacao = `
+                        <div class="flex flex-col">
+                            <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado} - Grupo ${e.grupo}</span>
+                            <span class="text-[10px] text-slate-500 italic leading-tight">${integrantes || 'Alunos não vinculados'}</span>
+                        </div>`;
                 }
 
                 processado[key] = { 
                     key: key, 
                     nome: identificacao, 
-                    avaliacoes: [], 
+                    avaliacoes: [], // Aqui guardaremos as médias de cada professor
                     turma: e.nome_turma,
-                    apto: e.apto_fetec 
+                    sede: e.sede,
+                    apto: false // Será true se pelo menos um jurado marcar como apto
                 };
             }
             
-            // Calcula a média das competências deste lançamento específico
-            const mediaAvaliador = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
-            processado[key].avaliacoes.push(mediaAvaliador);
+            // Média das 5 notas deste avaliador específico
+            const mediaDesteAvaliador = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
+            processado[key].avaliacoes.push(mediaDesteAvaliador);
             
-            // Se algum avaliador marcou como apto, o grupo entra na lista de selecionados
+            // Regra de Aptidão: Se um jurado achar apto, o projeto sobe para a lista FETEC
             if (e.apto_fetec) processado[key].apto = true;
         });
 
-        // 2. Calcula a média final (caso haja múltiplos avaliadores para o mesmo grupo)
-        const todos = Object.values(processado).map(obj => {
-            const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
-            obj.mediaFinal = soma / obj.avaliacoes.length;
+        // 2. Cálculo da Média das Médias (Consolidação de Jurados)
+        const rankingFinal = Object.values(processado).map(obj => {
+            const somaDasMedias = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
+            obj.mediaFinal = somaDasMedias / obj.avaliacoes.length;
+            obj.qtdJurados = obj.avaliacoes.length; // Guardamos quantos professores avaliaram
             return obj;
         }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-        // 3. Separação em Aptos e Geral
-        const listaAptos = todos.filter(r => r.apto === true);
-        const listaGeral = todos.filter(r => r.apto !== true);
+        // 3. Renderização das Tabelas (Aptos vs Geral)
+        const listaAptos = rankingFinal.filter(r => r.apto === true);
+        const listaGeral = rankingFinal.filter(r => r.apto !== true);
 
         let htmlFinal = '';
+        
         if (listaAptos.length > 0) {
-            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC (${currentLab.toUpperCase()})`, "border-amber-500/50 bg-amber-500/5 shadow-amber-900/10", "text-amber-400");
+            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC - ${sede}`, "border-amber-500/50 bg-amber-500/5 shadow-amber-900/10", "text-amber-400");
         }
+        
         if (listaGeral.length > 0) {
-            htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
+            htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral - ${sede}`, "border-slate-700 bg-slate-900/50", "text-slate-400");
         }
 
         container.innerHTML = htmlFinal;
 
     } catch (err) {
-        console.error("Erro no Ranking:", err);
-        showToast("Erro ao carregar ranking", "error");
+        console.error("Erro crítico no Ranking:", err);
+        showToast("Erro ao processar ranking das sedes", "error");
     } finally {
         hideLoading();
     }
@@ -911,72 +925,80 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
 }
 
    async function saveFetecEval(ra, grupo, cardId) {
-    // 1. Validação de Segurança: Bloqueia se houver nota > 10 ou campo vazio
+    // 1. Validação de Segurança: Notas entre 0 e 10
     const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
     let notaInvalida = false;
     
     inputs.forEach(i => {
-        const v = parseFloat(i.value);
+        // Tratamento para aceitar vírgula ou ponto na validação
+        const v = parseFloat(i.value.toString().replace(',', '.'));
         if (isNaN(v) || v > 10 || v < 0) notaInvalida = true;
     });
 
     if (notaInvalida) {
-        showToast("⚠️ Verifique as notas! Use valores de 0 a 10.", "error");
+        showToast("⚠️ Notas inválidas! Use valores de 0 a 10.", "error");
         return;
     }
 
-    // 2. Validação do Nome do Professor e Filtros
+    // 2. Captura de Contexto (Sede, Série, Turma e Lado)
     const prof = document.getElementById('evaluator-name').value.trim();
     const ladoSelecionado = document.getElementById('ev-lado').value;
+    const sedeAtual = document.getElementById('ev-sede').value;
+    const serieAtual = document.getElementById('ev-serie').value;
+    const turmaAtual = document.getElementById('ev-turma').value;
 
     if (!prof) {
-        showToast("⚠️ Digite seu nome no topo da página!", "error");
+        showToast("⚠️ Digite seu nome antes de avaliar!", "error");
         document.getElementById('evaluator-name').focus();
         return;
     }
 
-    if (ladoSelecionado === 'todos') {
-        showToast("⚠️ Selecione um Lado (A ou B) antes de avaliar!", "error");
-        return;
-    }
-
-    // 3. Feedback Visual de Carregamento
+    // 3. Feedback Visual de Processamento
     const card = document.getElementById(`card-${cardId}`);
     const btn = card.querySelector('button');
     const originalBtnText = btn.innerText;
     
     btn.disabled = true;
-    btn.innerText = "⏳ Gravando...";
+    btn.innerText = "⏳ Sincronizando...";
     card.style.opacity = "0.7";
 
-    // 4. Coleta das Notas
-    const getNota = (sub) => parseFloat(document.getElementById(`nota-${cardId}-${sub}`).value) || 0;
+    // 4. Tratamento de Notas (Converte vírgula para ponto)
+    const getNotaLimpa = (sub) => {
+        const input = document.getElementById(`nota-${cardId}-${sub}`);
+        if (!input || !input.value) return 0;
+        const valor = parseFloat(input.value.toString().replace(',', '.'));
+        return isNaN(valor) ? 0 : valor;
+    };
 
-    // 5. Montagem do Payload (O "LADO" aqui é a chave para não duplicar grupos)
+    // 5. Montagem do Objeto de Dados
     const payload = {
         ra_aluno: ra !== 'null' ? ra : null,
         grupo: grupo !== 'null' ? parseInt(grupo) : null,
-        lado: ladoSelecionado, // <--- CRUCIAL: Separa Grupo 1-A de Grupo 1-B
+        lado: ladoSelecionado,
         nome_professor: prof,
         disciplina: currentLab,
         data_eval: new Date().toISOString().split('T')[0],
         
-        nota_oralidade: getNota('Oralidade'),
-        nota_postura: getNota('Postura'),
-        nota_clareza: getNota('Clareza'),
-        nota_dominio: getNota('Dominio'),
-        nota_transmissao: getNota('Transmissao'),
+        nota_oralidade: getNotaLimpa('Oralidade'),
+        nota_postura: getNotaLimpa('Postura'),
+        nota_clareza: getNotaLimpa('Clareza'),
+        nota_dominio: getNotaLimpa('Dominio'),
+        nota_transmissao: getNotaLimpa('Transmissao'),
         
         observacao: document.getElementById(`obs-${cardId}`).value,
         apto_fetec: document.getElementById(`apto-${cardId}`).checked,
-        sede: document.getElementById('ev-sede').value,
-        serie: document.getElementById('ev-serie').value,
-        nome_turma: document.getElementById('ev-turma').value,
+        sede: sedeAtual,
+        serie: serieAtual,
+        nome_turma: turmaAtual,
         usuario_sistema: currentUser
     };
 
-    // 6. Envio para o Supabase
-    const { error: dbError } = await _supabase.from('evaluations_fetec').insert([payload]);
+    // 6. ENVIO COM UPSERT (Atualiza se já existir nota deste professor para este grupo)
+    const { error: dbError } = await _supabase
+        .from('evaluations_fetec')
+        .upsert([payload], { 
+            onConflict: 'nome_professor, ra_aluno, grupo, lado, nome_turma, disciplina, sede' 
+        });
 
     if (dbError) {
         console.error("Erro Supabase:", dbError);
@@ -985,14 +1007,20 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         btn.innerText = originalBtnText;
         card.style.opacity = "1";
     } else {
-        showToast("✅ Avaliação enviada!", "success");
+        showToast("✅ Avaliação Sincronizada!", "success");
         
-        // 7. Finalização Visual do Card (Bloqueia para evitar edição acidental)
-        card.classList.add('opacity-60', 'border-emerald-500', 'pointer-events-none');
-        btn.innerText = "✅ Salvo";
-        btn.classList.replace('bg-emerald-600', 'bg-slate-700');
+        // 7. Feedback de Sucesso (Mantém editável para correções)
+        card.classList.add('border-emerald-500/50');
+        card.style.opacity = "1";
+        btn.disabled = false;
+        btn.innerText = "🔄 Atualizar Nota";
+        btn.classList.replace('bg-emerald-600', 'bg-blue-600');
+        
+        // Bloqueia o nome do professor para evitar troca acidental durante a sessão
+        document.getElementById('evaluator-name').readOnly = true;
+        document.getElementById('evaluator-name').classList.add('bg-slate-800', 'text-slate-400');
 
-        // 8. Automação: Próximo Aluno
+        // 8. Focar no próximo card se houver
         if (typeof focusNextCard === "function") {
             focusNextCard(cardId);
         }
@@ -1465,53 +1493,86 @@ function updateEvalFilters() {
     const title = document.getElementById('log-title');
     const subtitle = document.getElementById('log-subtitle');
 
-    if (!modal) return console.error("Modal de log não encontrado no DOM");
+    if (!modal) return console.error("Modal de log não encontrado!");
 
-    body.innerHTML = `<tr><td colspan="5" class="p-10 text-center italic text-slate-500 text-sm">Buscando notas no banco...</td></tr>`;
+    // Estado de carregamento
+    body.innerHTML = `<tr><td colspan="5" class="p-10 text-center italic text-slate-500">Buscando histórico de jurados...</td></tr>`;
     modal.classList.remove('hidden');
 
     try {
-        // Verifica se a chave contém o padrão de grupo 'gX-LY-Turma'
-        const isGroup = key.startsWith('g') && key.includes('-L');
+        // 1. Identifica se a busca é por RA ou por Grupo Composto
+        // Formato da key: Sede-Turma-Lado-GNum
+        const isGroup = key.includes('-G');
         let query = _supabase.from('evaluations_fetec').select('*').eq('disciplina', currentLab);
 
         if (isGroup) {
-            // Extrai as partes da string: g{NUM}-L{LADO}-{TURMA}
-            const parts = key.replace('g', '').split('-'); 
-            const grupoNum = parts[0];
-            const ladoLetra = parts[1].replace('L', '');
-            const turmaNome = parts.slice(2).join('-'); // Rejunta o nome da turma caso tenha hífen
+            const parts = key.split('-'); // [Sede, Turma, Lado, GNum]
+            const sede = parts[0];
+            const turma = parts[1];
+            const lado = parts[2];
+            const grupoNum = parts[3].replace('G', '');
 
-            query = query.eq('grupo', grupoNum).eq('lado', ladoLetra).eq('nome_turma', turmaNome);
+            query = query.eq('sede', sede)
+                         .eq('nome_turma', turma)
+                         .eq('lado', lado)
+                         .eq('grupo', grupoNum);
         } else {
+            // Se for individual, a key é o próprio RA
             query = query.eq('ra_aluno', key);
         }
 
         const { data, error } = await query;
+
         if (error) throw error;
 
         if (!data || data.length === 0) {
-            body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-slate-500">Nenhum detalhe encontrado para esta chave.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-slate-500">Nenhum registro detalhado para este projeto.</td></tr>`;
             return;
         }
 
+        // 2. Atualiza cabeçalho do Modal
         title.innerText = isGroup ? `Histórico: Grupo ${data[0].grupo} (${data[0].lado})` : `Histórico: ${data[0].ra_aluno}`;
-        subtitle.innerText = `${data[0].nome_turma} | ${data[0].sede}`;
+        subtitle.innerText = `${data[0].sede} | ${data[0].nome_turma}`;
 
-        body.innerHTML = data.map(ev => {
-            const media = (ev.nota_oralidade + ev.nota_postura + ev.nota_clareza + ev.nota_dominio + ev.nota_transmissao) / 5;
+        // 3. Renderiza as linhas (Uma para cada professor)
+        body.innerHTML = data.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map(ev => {
+            const mediaIndiv = (ev.nota_oralidade + ev.nota_postura + ev.nota_clareza + ev.nota_dominio + ev.nota_transmissao) / 5;
+            
             return `
-                <tr class="border-b border-slate-800 hover:bg-white/5 transition-colors">
-                    <td class="p-3 font-bold text-blue-400 text-sm">${ev.nome_professor}</td>
-                    <td class="p-3 font-mono text-slate-500">${ev.nota_oralidade} | ${ev.nota_postura} | ${ev.nota_clareza} | ${ev.nota_dominio} | ${ev.nota_transmissao}</td>
-                    <td class="p-3 font-black text-white text-sm">${media.toFixed(2)}</td>
-                    <td class="p-3 italic text-slate-400 text-[11px] leading-relaxed">${ev.observacao || 'Sem comentários.'}</td>
-                    <td class="p-3 text-center">${ev.apto_fetec ? '✅' : '❌'}</td>
-                </tr>`;
+                <tr class="border-b border-slate-800/50 hover:bg-white/5 transition-colors">
+                    <td class="p-3">
+                        <span class="font-bold text-blue-400 block">${ev.nome_professor}</span>
+                        <span class="text-[9px] text-slate-500 uppercase tracking-tighter">Avaliador</span>
+                    </td>
+                    <td class="p-3">
+                        <div class="grid grid-cols-5 gap-1 text-[10px] font-mono text-slate-400">
+                            <div title="Oralidade">${ev.nota_oralidade}</div>
+                            <div title="Postura">${ev.nota_postura}</div>
+                            <div title="Clareza">${ev.nota_clareza}</div>
+                            <div title="Domínio">${ev.nota_dominio}</div>
+                            <div title="Transmissão">${ev.nota_transmissao}</div>
+                        </div>
+                    </td>
+                    <td class="p-3">
+                        <span class="text-sm font-black text-white bg-slate-800 px-2 py-1 rounded">${mediaIndiv.toFixed(2)}</span>
+                    </td>
+                    <td class="p-3">
+                        <p class="text-[11px] text-slate-400 italic leading-snug max-w-xs break-words">
+                            ${ev.observacao || '<span class="opacity-30">Sem observações.</span>'}
+                        </p>
+                    </td>
+                    <td class="p-3 text-center">
+                        ${ev.apto_fetec ? 
+                            '<span class="text-emerald-500" title="Apto para FETEC">✔</span>' : 
+                            '<span class="text-slate-700" title="Não selecionado">✘</span>'}
+                    </td>
+                </tr>
+            `;
         }).join('');
+
     } catch (err) {
-        console.error(err);
-        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500">Erro ao carregar dados do Supabase.</td></tr>`;
+        console.error("Erro no Histórico:", err);
+        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500">Falha ao conectar com o banco de dados.</td></tr>`;
     }
 }
 
