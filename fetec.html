@@ -121,6 +121,35 @@ td {
     <p id="loader-progress" class="loader-sub">Aguarde um momento</p>
 </div>
   <div id="app" class="w-full h-full overflow-auto bg-gradient-to-br from-indigo-50 to-blue-50"></div>
+  <div id="log-modal" class="hidden fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden">
+        <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+            <div>
+                <h3 id="log-title" class="text-xl font-black text-white uppercase tracking-tight">Histórico de Avaliação</h3>
+                <p id="log-subtitle" class="text-xs text-slate-400 italic"></p>
+            </div>
+            <button onclick="closeLogModal()" class="text-slate-400 hover:text-white p-2">✕ Fechar</button>
+        </div>
+        <div class="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <table class="w-full text-left text-xs">
+                <thead class="text-slate-500 uppercase text-[10px] bg-slate-950">
+                    <tr>
+                        <th class="p-3">Avaliador</th>
+                        <th class="p-3">Notas (O|P|C|D|T)</th>
+                        <th class="p-3">Média</th>
+                        <th class="p-3 w-1/3">Observações / Feedback</th>
+                        <th class="p-3 text-center">Apto?</th>
+                    </tr>
+                </thead>
+                <tbody id="log-table-body" class="text-slate-300">
+                    </tbody>
+            </table>
+        </div>
+        <div class="p-4 bg-slate-950 border-t border-slate-800 text-center text-[10px] text-slate-600">
+            Dados extraídos em tempo real do banco de dados FETEC.
+        </div>
+    </div>
+</div>
 
   <script>
     // --- CONFIGURAÇÃO SUPABASE ---
@@ -1401,35 +1430,7 @@ function updateEvalFilters() {
                 <button onclick="closeAssignRoomModal()" class="mt-6 w-full py-2 bg-slate-600 text-white rounded-lg">Fechar</button>
             </div>
         </div>
-        <div id="log-modal" class="hidden fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
-    <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden">
-        <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
-            <div>
-                <h3 id="log-title" class="text-xl font-black text-white uppercase tracking-tight">Histórico de Avaliação</h3>
-                <p id="log-subtitle" class="text-xs text-slate-400 italic"></p>
-            </div>
-            <button onclick="closeLogModal()" class="text-slate-400 hover:text-white p-2">✕ Fechar</button>
-        </div>
-        <div class="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
-            <table class="w-full text-left text-xs">
-                <thead class="text-slate-500 uppercase text-[10px] bg-slate-950">
-                    <tr>
-                        <th class="p-3">Avaliador</th>
-                        <th class="p-3">Notas (O|P|C|D|T)</th>
-                        <th class="p-3">Média</th>
-                        <th class="p-3 w-1/3">Observações / Feedback</th>
-                        <th class="p-3 text-center">Apto?</th>
-                    </tr>
-                </thead>
-                <tbody id="log-table-body" class="text-slate-300">
-                    </tbody>
-            </table>
-        </div>
-        <div class="p-4 bg-slate-950 border-t border-slate-800 text-center text-[10px] text-slate-600">
-            Dados extraídos em tempo real do banco de dados FETEC.
-        </div>
-    </div>
-</div>`;
+        `;
     }
 
     async function showEvaluationLog(key) {
@@ -1438,53 +1439,53 @@ function updateEvalFilters() {
     const title = document.getElementById('log-title');
     const subtitle = document.getElementById('log-subtitle');
 
-    body.innerHTML = `<tr><td colspan="5" class="p-10 text-center italic">Buscando histórico...</td></tr>`;
+    if (!modal) return console.error("Modal de log não encontrado no DOM");
+
+    body.innerHTML = `<tr><td colspan="5" class="p-10 text-center italic text-slate-500 text-sm">Buscando notas no banco...</td></tr>`;
     modal.classList.remove('hidden');
 
     try {
-        // Verifica se a chave é um RA ou um ID de grupo
-        const isRA = !key.startsWith('grupo-');
+        // Verifica se a chave contém o padrão de grupo 'gX-LY-Turma'
+        const isGroup = key.startsWith('g') && key.includes('-L');
         let query = _supabase.from('evaluations_fetec').select('*').eq('disciplina', currentLab);
 
-        if (isRA) {
-            query = query.eq('ra_aluno', key);
+        if (isGroup) {
+            // Extrai as partes da string: g{NUM}-L{LADO}-{TURMA}
+            const parts = key.replace('g', '').split('-'); 
+            const grupoNum = parts[0];
+            const ladoLetra = parts[1].replace('L', '');
+            const turmaNome = parts.slice(2).join('-'); // Rejunta o nome da turma caso tenha hífen
+
+            query = query.eq('grupo', grupoNum).eq('lado', ladoLetra).eq('nome_turma', turmaNome);
         } else {
-            const parts = key.split('-'); // grupo-NUM-TURMA
-            query = query.eq('grupo', parseInt(parts[1])).eq('nome_turma', parts[2]);
+            query = query.eq('ra_aluno', key);
         }
 
         const { data, error } = await query;
-
         if (error) throw error;
 
         if (!data || data.length === 0) {
-            body.innerHTML = `<tr><td colspan="5" class="p-10 text-center">Nenhum registro detalhado encontrado.</td></tr>`;
+            body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-slate-500">Nenhum detalhe encontrado para esta chave.</td></tr>`;
             return;
         }
 
-        // Atualiza cabeçalho do modal
-        title.innerText = isRA ? `Histórico: ${key}` : `Histórico: Grupo ${data[0].grupo}`;
+        title.innerText = isGroup ? `Histórico: Grupo ${data[0].grupo} (${data[0].lado})` : `Histórico: ${data[0].ra_aluno}`;
         subtitle.innerText = `${data[0].nome_turma} | ${data[0].sede}`;
 
-        // Preenche a tabela
         body.innerHTML = data.map(ev => {
-            const mediaIndiv = (ev.nota_oralidade + ev.nota_postura + ev.nota_clareza + ev.nota_dominio + ev.nota_transmissao) / 5;
+            const media = (ev.nota_oralidade + ev.nota_postura + ev.nota_clareza + ev.nota_dominio + ev.nota_transmissao) / 5;
             return `
-                <tr class="border-b border-slate-800 hover:bg-white/5">
-                    <td class="p-3 font-bold text-blue-400">${ev.nome_professor}</td>
-                    <td class="p-3 font-mono text-[10px]">
-                        ${ev.nota_oralidade} | ${ev.nota_postura} | ${ev.nota_clareza} | ${ev.nota_dominio} | ${ev.nota_transmissao}
-                    </td>
-                    <td class="p-3 font-black text-white text-sm">${mediaIndiv.toFixed(2)}</td>
+                <tr class="border-b border-slate-800 hover:bg-white/5 transition-colors">
+                    <td class="p-3 font-bold text-blue-400 text-sm">${ev.nome_professor}</td>
+                    <td class="p-3 font-mono text-slate-500">${ev.nota_oralidade} | ${ev.nota_postura} | ${ev.nota_clareza} | ${ev.nota_dominio} | ${ev.nota_transmissao}</td>
+                    <td class="p-3 font-black text-white text-sm">${media.toFixed(2)}</td>
                     <td class="p-3 italic text-slate-400 text-[11px] leading-relaxed">${ev.observacao || 'Sem comentários.'}</td>
-                    <td class="p-3 text-center text-lg">${ev.apto_fetec ? '✅' : '❌'}</td>
-                </tr>
-            `;
+                    <td class="p-3 text-center">${ev.apto_fetec ? '✅' : '❌'}</td>
+                </tr>`;
         }).join('');
-
     } catch (err) {
         console.error(err);
-        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500">Erro ao carregar dados.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500">Erro ao carregar dados do Supabase.</td></tr>`;
     }
 }
 
