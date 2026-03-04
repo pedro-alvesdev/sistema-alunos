@@ -89,7 +89,9 @@
     let importErrors = [];
     let isUploadCardVisible = false; // Começa oculto por padrão
     // Verifica se a FETEC está ativa (padrão é true se for a primeira vez)
-let isFetecActive = localStorage.getItem('isFetecActive') === null ? true : localStorage.getItem('isFetecActive') === 'true';
+    let isFetecActive = localStorage.getItem('isFetecActive') === null ? true : localStorage.getItem('isFetecActive') === 'true';
+    let currentLab = 'maker'; // Padrão
+    let allAssignments = [];  // Guardará os dados da nova tabela 'lab_assignments'
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -105,56 +107,54 @@ let isFetecActive = localStorage.getItem('isFetecActive') === null ? true : loca
 
     // --- CARREGAMENTO DE DADOS ---
 async function refreshData() {
-        showToast("Carregando banco de dados completo...", "info");
-        
-        let allFetchedStudents = [];
-        let lastCount = 0;
-        let page = 0;
-        const pageSize = 1000;
+    showToast("Sincronizando banco de dados...", "info");
+    
+    // 1. BUSCA DE ALUNOS (Dados Fixos: Nome, RA, Turma)
+    // (Mantenha o seu loop de busca em blocos de 1000 que já existe no seu código)
+    let allFetchedStudents = [];
+    let page = 0;
+    const pageSize = 1000;
+    let lastCount = 0;
 
-        // Loop para buscar todos os alunos em blocos de 1000 (contorna o limite do servidor)
-        do {
-            const { data, error } = await _supabase
-                .from('students')
-                .select('*')
-                .range(page * pageSize, (page + 1) * pageSize - 1);
+    do {
+        const { data, error } = await _supabase
+            .from('students')
+            .select('*')
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+        if (error) break;
+        allFetchedStudents = allFetchedStudents.concat(data);
+        lastCount = data.length;
+        page++;
+    } while (lastCount === pageSize);
 
-            if (error) {
-                console.error("Erro ao carregar bloco de alunos:", error);
-                break;
-            }
+    // 2. NOVA BUSCA: VÍNCULOS DE LABORATÓRIO (Lado e Grupo)
+    // Aqui buscamos a tabela que criamos no Passo 1
+    const { data: assignData, error: assignError } = await _supabase
+        .from('lab_assignments')
+        .select('*');
 
-            allFetchedStudents = allFetchedStudents.concat(data);
-            lastCount = data.length;
-            page++;
-        } while (lastCount === pageSize); // Se o bloco veio cheio, busca o próximo
-
-        // Busca a frequência (também em blocos, para garantir)
-        let allFetchedAttendance = [];
-        page = 0;
-        do {
-            const { data, error } = await _supabase
-                .from('attendance')
-                .select('*')
-                .range(page * pageSize, (page + 1) * pageSize - 1);
-            
-            if (error) break;
-            allFetchedAttendance = allFetchedAttendance.concat(data);
-            lastCount = data.length;
-            page++;
-        } while (lastCount === pageSize);
-
-        allStudents = allFetchedStudents;
-        allAttendances = allFetchedAttendance;
-
-        if (currentScreen === 'management') {
-            updateFilterOptions('management');
-            applyFilters();
-        } else {
-            updateFilterOptions('attendance');
-            applyAttendanceFilters();
-        }
+    if (assignError) {
+        console.error("Erro ao carregar vínculos:", assignError);
+        showToast("Erro ao carregar grupos", "error");
+    } else {
+        // Guardamos todos os vínculos na variável global
+        allAssignments = assignData; 
     }
+
+    // 3. BUSCA DE FREQUÊNCIA (Opcional: Podemos adicionar o filtro de Lab aqui depois)
+    // (Mantenha a sua lógica de busca de attendance atual)
+    
+    // 4. ATUALIZAÇÃO DA MEMÓRIA LOCAL
+    allStudents = allFetchedStudents;
+    
+    // 5. ATUALIZAÇÃO DA TELA
+    if (currentScreen === 'management') {
+        updateFilterOptions('management');
+        applyFilters();
+    } else if (currentScreen === 'evaluation') {
+        updateEvalFilters();
+    }
+}
 
     // --- INTERFACE: LOGIN ---
     function showLoginScreen() {
@@ -193,17 +193,33 @@ async function refreshData() {
 
       // Esta parte deve ficar FORA das crases da innerHTML
       document.getElementById('login-form').onsubmit = async (e) => {
-        e.preventDefault();
-        if(document.getElementById('access-code').value === '123456') {
-            isAuthenticated = true;
-            currentUser = 'admin';
-            sessionStorage.setItem('isAuth', 'true');
-            await refreshData();
-            switchScreen('management');
+    e.preventDefault();
+    const code = document.getElementById('access-code').value;
+
+    // Aceita as duas senhas administrativas
+    if (code === '123456' || code === '456789') {
+        isAuthenticated = true;
+        
+        if (code === '123456') {
+            currentLab = 'maker';
+            currentUser = 'admin_maker';
         } else {
-            showToast("Código inválido!", "error");
+            currentLab = 'ciencias';
+            currentUser = 'admin_ciencias';
         }
-      };
+
+        // Salva na sessão para manter o contexto após F5
+        sessionStorage.setItem('isAuth', 'true');
+        sessionStorage.setItem('currentLab', currentLab);
+        sessionStorage.setItem('userRole', currentUser);
+        
+        showToast(`Bem-vindo! Modo: ${currentLab.toUpperCase()}`, "success");
+        await refreshData();
+        switchScreen('management');
+    } else {
+        showToast("Código inválido!", "error");
+    }
+};
     }
 
     async function startPublicEvaluation() {
@@ -242,6 +258,11 @@ async function refreshData() {
 </div>
 ` : ''}
         </header>`;
+}
+
+    function getStudentAssignment(ra) {
+    // Procura na lista de vínculos o RA do aluno E a disciplina do laboratório atual
+    return allAssignments.find(a => a.ra_aluno === ra && a.disciplina === currentLab) || { lado: null, grupo: null };
 }
 
     function switchScreen(s) {
@@ -298,6 +319,16 @@ async function updateDateFromPicker(val) {
         <div class="min-h-full p-4 md:p-8">
             <div class="max-w-7xl mx-auto">
                 ${renderNavigationHeader()}
+                <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-700 mb-6 no-print shadow-lg">
+    <button onclick="currentLab='maker'; generateRanking();" 
+        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'maker' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
+        RANKING MAKER
+    </button>
+    <button onclick="currentLab='ciencias'; generateRanking();" 
+        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'ciencias' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
+        RANKING CIÊNCIAS
+    </button>
+</div>
                 
                 <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 shadow-xl no-print">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -335,16 +366,18 @@ async function generateRanking() {
     const serie = document.getElementById('res-serie').value;
     const container = document.getElementById('results-content');
 
-    // 1. Busca todos os registros do banco para esta sede/série
+    // 1. Busca avaliações filtrando pela SEDE, SÉRIE e pela DISCIPLINA ATUAL
     const { data: evals, error } = await _supabase
         .from('evaluations_fetec')
         .select('*')
         .eq('sede', sede)
-        .eq('serie', serie);
+        .eq('serie', serie)
+        .eq('usuario_sistema', currentUser.includes('maker') ? 'admin_maker' : 'admin_ciencias'); 
+        // Ou use uma lógica baseada em currentLab se você salvou a disciplina no payload de salvar nota
 
     if (error) return console.error(error);
 
-    // 2. Processamento de dados: Agrupar por Grupo ou RA
+    // 2. Processamento (Agrupar por Aluno ou Grupo)
     const processado = {};
     evals.forEach(e => {
         const key = e.ra_aluno || `Grupo ${e.grupo} (${e.nome_turma})`;
@@ -357,59 +390,47 @@ async function generateRanking() {
             };
         }
         const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
-        processado[key].avaliacoes.push({ prof: e.nome_professor, media: mediaIndiv, apto: e.apto_fetec });
-        if (e.apto_fetec) processado[key].apto = true; // Se um prof marcou como apto, ele aparece na lista
+        processado[key].avaliacoes.push({ prof: e.nome_professor, media: mediaIndiv });
+        if (e.apto_fetec) processado[key].apto = true;
     });
 
-    // Converter para array e calcular média final
     const ranking = Object.values(processado).map(obj => {
         const somaMedias = obj.avaliacoes.reduce((acc, a) => acc + a.media, 0);
         obj.mediaFinal = somaMedias / obj.avaliacoes.length;
         return obj;
     }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-    // 3. Renderizar Tabelas
+    // 3. Renderização das Tabelas (Com cores dinâmicas)
+    const colorClass = currentLab === 'maker' ? 'text-blue-400' : 'text-emerald-400';
+    
     container.innerHTML = `
-        <section class="bg-slate-900 p-6 rounded-2xl border border-slate-700">
-            <h2 class="text-blue-400 font-bold mb-4 uppercase text-sm tracking-widest">📋 Notas Detalhadas (Por Professor)</h2>
+        <div class="text-center mb-4 no-print">
+            <span class="px-4 py-1 rounded-full border border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Exibindo Resultados de: ${currentLab.toUpperCase()}
+            </span>
+        </div>
+        
+        <section class="bg-slate-900 p-6 rounded-2xl border border-slate-700 shadow-2xl">
+            <h2 class="${colorClass} font-bold mb-4 uppercase text-sm tracking-widest">📋 Ranking de Notas</h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-left text-xs text-slate-300">
                     <thead>
                         <tr class="border-b border-slate-700">
                             <th class="p-2">Equipe/Aluno</th>
                             <th class="p-2">Turma</th>
-                            <th class="p-2">Professores e Notas</th>
-                            <th class="p-2 bg-blue-900/30 text-white font-bold">Média Final</th>
+                            <th class="p-2">Média Final</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${ranking.map(r => `
+                        ${ranking.map((r, idx) => `
                             <tr class="border-b border-slate-800 hover:bg-slate-800/30">
-                                <td class="p-2 font-bold text-white">${r.nome}</td>
+                                <td class="p-2 font-bold text-white">${idx + 1}º - ${r.nome}</td>
                                 <td class="p-2">${r.turma}</td>
-                                <td class="p-2">
-                                    ${r.avaliacoes.map(a => `<span class="inline-block bg-slate-800 rounded px-2 py-1 mr-1 mb-1">${a.prof}: <b>${a.media.toFixed(2)}</b></span>`).join('')}
-                                </td>
-                                <td class="p-2 bg-blue-900/20 text-blue-400 font-black">${r.mediaFinal.toFixed(2)}</td>
+                                <td class="p-2 font-black ${colorClass}">${r.mediaFinal.toFixed(2)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
-            </div>
-        </section>
-
-        <section class="bg-emerald-900/10 p-6 rounded-2xl border border-emerald-500/30">
-            <h2 class="text-emerald-400 font-bold mb-4 uppercase text-sm tracking-widest">🏆 Selecionados para FETEC (Aptos)</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                ${ranking.filter(r => r.apto).map(r => `
-                    <div class="bg-slate-900 p-3 rounded-lg border border-emerald-500/20 flex justify-between items-center">
-                        <div>
-                            <p class="text-white font-bold text-sm">${r.nome}</p>
-                            <p class="text-slate-500 text-[10px]">${r.turma}</p>
-                        </div>
-                        <span class="text-emerald-400 font-black">${r.mediaFinal.toFixed(1)}</span>
-                    </div>
-                `).join('')}
             </div>
         </section>
     `;
@@ -515,40 +536,52 @@ async function generateRanking() {
     const turma = document.getElementById('ev-turma').value;
     const lado = document.getElementById('ev-lado').value;
     const grupoSel = document.getElementById('ev-grupo').value;
-
-    // Filtra a lista base de alunos
-    let lista = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
-    
-    if(lado !== 'todos') lista = lista.filter(s => s.parte_sala === lado);
-    if(grupoSel !== 'todos') lista = lista.filter(s => String(s.grupo) === grupoSel);
-
     const cont = document.getElementById('eval-container');
+
+    // 1. Filtra a lista base de alunos (Dados Fixos)
+    let listaBase = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
     
-    if (lista.length === 0) {
-        cont.innerHTML = `<p class="text-slate-500 col-span-full text-center py-10 italic">Nenhum aluno/grupo encontrado com estes filtros.</p>`;
+    // 2. BUSCA DINÂMICA: Mapeia cada aluno ao seu grupo no laboratório atual
+    // Criamos uma lista de objetos que une o Aluno ao seu Vínculo atual
+    const listaComVinculo = listaBase.map(aluno => {
+        const vinculo = allAssignments.find(a => 
+            a.ra_aluno === aluno.ra && 
+            a.disciplina === currentLab // Filtra por Maker ou Ciências
+        ) || { lado: null, grupo: null };
+        
+        return { ...aluno, currentLado: vinculo.lado, currentGrupo: vinculo.grupo };
+    });
+
+    // 3. Aplica os filtros de Lado e Grupo da interface
+    let listaFiltrada = listaComVinculo;
+    if (lado !== 'todos') listaFiltrada = listaFiltrada.filter(s => s.currentLado === lado);
+    if (grupoSel !== 'todos') listaFiltrada = listaFiltrada.filter(s => String(s.currentGrupo) === grupoSel);
+
+    if (listaFiltrada.length === 0) {
+        cont.innerHTML = `<p class="text-slate-500 col-span-full text-center py-10 italic">Nenhum projeto encontrado para ${currentLab.toUpperCase()} nesta turma.</p>`;
         return;
     }
 
-    // LÓGICA DE DECISÃO: Individual (6º ano) ou Grupo (7º ao 9º)
-    if(serie.includes("6")) {
-        // Renderiza um card para cada aluno
-        cont.innerHTML = lista.sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno))
-            .map(aluno => renderEvalCard(aluno.nome_aluno, aluno.ra, null)).join('');
+    // 4. LÓGICA DE EXIBIÇÃO: Individual ou Grupo
+    if (serie.includes("6")) {
+        // Individual: Renderiza um card por aluno usando o Grupo/RA do contexto atual
+        cont.innerHTML = listaFiltrada.sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno))
+            .map(aluno => renderEvalCard(aluno.nome_aluno, aluno.ra, aluno.currentGrupo)).join('');
     } else {
-        // Agrupa por número de grupo e busca os membros
-        const gruposUnicos = [...new Set(lista.map(s => s.grupo))].filter(g => g).sort((a,b) => a - b);
+        // Coletivo: Agrupa por número de grupo definido para este laboratório
+        const gruposUnicos = [...new Set(listaFiltrada.map(s => s.currentGrupo))].filter(g => g).sort((a,b) => a - b);
         
         cont.innerHTML = gruposUnicos.map(g => {
-            // Busca nomes dos alunos que pertencem a este grupo específico (na turma e sede selecionadas)
-            const membros = lista.filter(s => s.grupo === g)
-                                 .map(s => s.nome_aluno)
-                                 .sort()
-                                 .join(', ');
+            const membros = listaFiltrada.filter(s => s.currentGrupo === g)
+                                         .map(s => s.nome_aluno)
+                                         .sort()
+                                         .join(', ');
 
             return renderEvalCard(`Grupo ${g}`, null, g, membros);
         }).join('');
     }
-      loadExistingEvaluations();
+    
+    loadExistingEvaluations(); // Carrega notas que o professor já deu
 }
 
     function renderEvalCard(titulo, ra, grupo, membros = "") {
@@ -795,26 +828,41 @@ async function generateRanking() {
     function renderEvaluationScreen() {
     currentScreen = 'evaluation';
     const app = document.getElementById('app');
+    
+    // Define as cores baseadas no laboratório selecionado para feedback visual
+    const themeColor = currentLab === 'maker' ? 'border-blue-500' : 'border-emerald-500';
+    const bgColor = currentLab === 'maker' ? 'bg-blue-600' : 'bg-emerald-600';
+
     app.innerHTML = `
         <div class="min-h-full p-4 md:p-8">
             <div class="max-w-7xl mx-auto">
                 ${renderNavigationHeader()}
                 
-                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 space-y-6 shadow-xl">
+                <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-700 mb-6 no-print shadow-2xl">
+                    <button onclick="currentLab='maker'; renderEvaluationScreen();" 
+                        class="flex-1 py-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${currentLab === 'maker' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}">
+                        🛠️ LABORATÓRIO MAKER
+                    </button>
+                    <button onclick="currentLab='ciencias'; renderEvaluationScreen();" 
+                        class="flex-1 py-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${currentLab === 'ciencias' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}">
+                        🧪 LAB. CIÊNCIAS
+                    </button>
+                </div>
+                
+                <div class="bg-slate-800 p-6 rounded-xl border ${themeColor} mb-6 space-y-6 shadow-xl transition-colors duration-500">
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-700 pb-4">
                         <h2 class="text-white font-bold text-xl flex items-center gap-2">
-                            <span class="bg-emerald-500 w-2 h-6 rounded-full"></span>
-                            Painel do Avaliador
+                            <span class="${bgColor} w-2 h-6 rounded-full"></span>
+                            Painel do Avaliador - <span class="uppercase">${currentLab}</span>
                         </h2>
                         <div class="w-full md:w-72">
-    <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Nome do Professor Avaliador</label>
-    <input type="text" id="evaluator-name" 
-        list="evaluators-list" 
-        onchange="saveEvaluatorLocal(this.value); applyEvalList();" 
-        placeholder="Digite ou selecione seu nome..." 
-        class="w-full p-3 bg-slate-900 border border-emerald-500/50 rounded-lg text-white text-sm focus:border-emerald-500 outline-none transition-all">
-    <datalist id="evaluators-list"></datalist>
-</div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Seu Nome (Avaliador)</label>
+                            <input type="text" id="evaluator-name" list="evaluators-list" 
+                                onchange="saveEvaluatorLocal(this.value); applyEvalList();" 
+                                placeholder="Digite ou selecione..." 
+                                class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 outline-none transition-all">
+                            <datalist id="evaluators-list"></datalist>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -827,9 +875,9 @@ async function generateRanking() {
                             <select id="ev-serie" onchange="updateEvalFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
                         </div>
                         <div>
-    <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
-    <select id="ev-turma" onchange="updateEvalFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
-</div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+                            <select id="ev-turma" onchange="updateEvalFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
                         <div>
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
                             <select id="ev-lado" onchange="applyEvalList()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
@@ -846,13 +894,12 @@ async function generateRanking() {
                 </div>
 
                 <div id="eval-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <p class="text-slate-500 text-center py-20 col-span-full italic">Selecione os filtros acima para listar os projetos.</p>
-                </div>
+                    </div>
             </div>
         </div>`;
     
     populateInitialEvalFilters();
-      initEvaluatorField();
+    initEvaluatorField(); // Carrega o nome salvo e o datalist do banco
 }
 
     function populateInitialEvalFilters() {
@@ -1219,104 +1266,116 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     }
 
     async function handleStudentSubmit(e) {
-    e.preventDefault(); // Impede o recarregamento da página
-    
-    const student = {
-        nome_aluno: document.getElementById('m-nome').value,
-        ra: document.getElementById('m-ra').value,
-        sede: document.getElementById('m-sede').value,
-        serie: document.getElementById('m-serie').value,
-        nome_turma: document.getElementById('m-turma').value,
-        parte_sala: document.getElementById('m-parte').value,
-        grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null,
-        usuario: currentUser
+    e.preventDefault();
+    showToast("Processando atualização...", "info");
+
+    const ra = document.getElementById('m-ra').value;
+    const isMaker = (currentLab === 'maker');
+
+    // 1. DADOS FIXOS (Tabela 'students')
+    // Só tentamos atualizar se for o ADMIN MAKER logado
+    if (isMaker) {
+        const studentData = {
+            nome_aluno: document.getElementById('m-nome').value,
+            ra: ra,
+            sede: document.getElementById('m-sede').value,
+            serie: document.getElementById('m-serie').value,
+            nome_turma: document.getElementById('m-turma').value,
+            usuario: currentUser
+        };
+
+        const { error: errorStudent } = await _supabase
+            .from('students')
+            .upsert(studentData, { onConflict: 'ra' });
+
+        if (errorStudent) {
+            console.error("Erro Students:", errorStudent);
+            return showToast("Erro nos dados do aluno", "error");
+        }
+    }
+
+    // 2. DADOS DO LABORATÓRIO (Tabela 'lab_assignments')
+    // Salva o Lado e Grupo específicos do lab atual (Maker ou Ciências)
+    const assignmentData = {
+        ra_aluno: ra,
+        disciplina: currentLab,
+        lado: document.getElementById('m-parte').value || null,
+        grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
     };
 
-    showToast("Salvando alterações...", "info");
+    const { error: errorAssign } = await _supabase
+        .from('lab_assignments')
+        .upsert(assignmentData, { onConflict: 'ra_aluno,disciplina' });
 
-    const { error } = await _supabase
-        .from('students')
-        .upsert(student, { onConflict: 'ra' });
-
-    if (error) {
-        console.error("Erro ao salvar:", error);
-        showToast("Erro ao salvar: " + error.message, "error");
+    if (errorAssign) {
+        console.error("Erro Assignment:", errorAssign);
+        showToast("Erro ao salvar Grupo/Lado", "error");
     } else {
-        showToast("Dados atualizados com sucesso!", "success");
+        showToast("Dados salvos com sucesso!", "success");
         closeStudentModal();
-        await refreshData(); // Recarrega os dados do banco para a memória local
-        
-        // Renderiza a tela correta dependendo de onde você está
-        if (currentScreen === 'management') renderManagementScreen();
-        else renderAttendanceScreen();
+        await refreshData(); // Recarrega tudo para atualizar as listas e o allAssignments
     }
 }
 
   async function togglePresence(ra, val) {
-        const dKey = selectedDate.getFullYear() + '-' + 
-             String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
-             String(selectedDate.getDate()).padStart(2, '0');
-        const student = allStudents.find(x => x.ra === ra);
+    const dKey = selectedDate.toISOString().split('T')[0];
+    const student = allStudents.find(x => x.ra === ra);
+    if (!student) return;
+
+    const { error } = await _supabase.from('attendance').upsert({
+        ra: ra, 
+        data_presenca: dKey, 
+        disciplina: currentLab, // REGISTRA O LAB ATUAL
+        presente: val, 
+        nome_aluno: student.nome_aluno, 
+        nome_turma: student.nome_turma, 
+        usuario: currentUser
+    }, { onConflict: 'ra,data_presenca,disciplina' });
+
+    if (error) {
+        showToast("Erro ao salvar presença", "error");
+    } else {
+        // Atualiza memória local
+        const index = allAttendances.findIndex(a => a.ra === ra && a.data_presenca === dKey && a.disciplina === currentLab);
+        if (index !== -1) allAttendances[index].presente = val;
+        else allAttendances.push({ ra, data_presenca: dKey, disciplina: currentLab, presente: val });
         
-        if (!student) return;
-
-        // 1. Salva no Supabase (Banco de Dados)
-        const { error } = await _supabase.from('attendance').upsert({
-            ra: ra, 
-            data_presenca: dKey, 
-            presente: val, 
-            nome_aluno: student.nome_aluno, 
-            nome_turma: student.nome_turma, 
-            usuario: currentUser
-        }, { onConflict: 'ra,data_presenca' });
-
-        if (error) {
-            showToast("Erro ao salvar presença", "error");
-            console.error(error);
-        } else {
-            // 2. Sincroniza a memória local (allAttendances)
-            const index = allAttendances.findIndex(a => a.ra === ra && a.data_presenca === dKey);
-            
-            if (index !== -1) {
-                allAttendances[index].presente = val;
-            } else {
-                allAttendances.push({ ra, data_presenca: dKey, presente: val });
-            }
-            
-            showToast(val ? "Presente" : "Ausente", "success");
-        }
+        showToast(`${val ? 'Presente' : 'Ausente'} em ${currentLab.toUpperCase()}`, "success");
     }
+}
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
     async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) {
-        return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
-    }
+    if (selectedStudentsForAssign.size === 0) return alert("Selecione alunos na lista!");
+    if (!value && field === 'grupo') return alert("Insira um número de grupo.");
 
-    if (!value) return alert("Por favor, insira um valor para atribuir.");
-
-    const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
+    const confirmacao = confirm(`Aplicar "${value}" em ${field} (${currentLab.toUpperCase()}) para ${selectedStudentsForAssign.size} alunos?`);
     if (!confirmacao) return;
 
-    showToast("Atualizando banco de dados...", "info");
+    showToast("Atualizando em massa...", "info");
 
-    const ids = Array.from(selectedStudentsForAssign);
-    
-    // Converte para número se o campo for 'grupo'
-    const finalValue = field === 'grupo' ? parseInt(value) : value;
+    const ras = Array.from(selectedStudentsForAssign).map(id => {
+        const s = allStudents.find(x => x.id === id);
+        return s ? s.ra : null;
+    }).filter(Boolean);
+
+    // Prepara os dados para a nova tabela de vínculos
+    const payloads = ras.map(ra => ({
+        ra_aluno: ra,
+        disciplina: currentLab,
+        [field]: field === 'grupo' ? parseInt(value) : value
+    }));
 
     const { error } = await _supabase
-        .from('students')
-        .update({ [field]: finalValue })
-        .in('id', ids);
+        .from('lab_assignments')
+        .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
     if (error) {
-        console.error("Erro na atribuição:", error);
-        showToast("Erro ao atualizar: " + error.message, "error");
+        showToast("Erro na atualização em massa", "error");
     } else {
         showToast("Atualização concluída!", "success");
         selectedStudentsForAssign.clear();
-        await refreshData(); 
+        await refreshData();
         closeAssignRoomModal();
     }
 }
@@ -1434,6 +1493,8 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     const cont = document.getElementById('student-list');
     const count = document.getElementById('student-count');
     if(!cont) return;
+    
+    // Atualiza o contador de alunos filtrados na tela
     count.innerText = filteredStudents.length;
 
     cont.innerHTML = `
@@ -1443,40 +1504,100 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                     <th class="p-3 text-left w-12">#</th>
                     <th class="p-3 text-left">Nome</th>
                     <th class="p-3 text-left">Turma</th>
-                    <th class="p-3 text-left">Lado/G</th>
+                    <th class="p-3 text-left">Lado/G (${currentLab.toUpperCase()})</th>
                     <th class="p-3 text-center">Ações</th>
                 </tr>
             </thead>
             <tbody>
                 ${filteredStudents
                     .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
-                    .map((s, index) => `
-                    <tr class="border-b border-slate-700 hover:bg-slate-700/30">
-                        <td class="p-3 text-slate-500 font-mono text-sm">${index + 1}</td>
-                        <td class="p-3">${s.nome_aluno}</td>
-                        <td class="p-3 text-sm">${s.nome_turma}</td>
-                        <td class="p-3 text-sm">${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
-                        <td class="p-3 text-center">
-                            <button onclick="openEditModal('${s.ra}')" class="text-blue-400 mr-3">✏️</button>
-                            <button onclick="deleteStudent('${s.id}')" class="text-red-400">🗑️</button>
-                        </td>
-                    </tr>
-                `).join('')}
+                    .map((s, index) => {
+                        // BUSCA O VÍNCULO ESPECÍFICO (Maker ou Ciências)
+                        // Esta é a parte vital: ela procura o RA e a Disciplina atual
+                        const assign = allAssignments.find(a => 
+                            a.ra_aluno === s.ra && 
+                            a.disciplina === currentLab
+                        ) || { lado: null, grupo: null };
+
+                        return `
+                        <tr class="border-b border-slate-700 hover:bg-slate-700/30">
+                            <td class="p-3 text-slate-500 font-mono text-sm">${index + 1}</td>
+                            <td class="p-3">
+                                <p class="font-medium">${s.nome_aluno}</p>
+                                <p class="text-[10px] text-slate-500 uppercase">${s.sede}</p>
+                            </td>
+                            <td class="p-3 text-sm">${s.nome_turma}</td>
+                            
+                            <td class="p-3 text-sm">
+                                <span class="px-2 py-1 rounded ${assign.lado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
+                                    ${assign.lado || '-'}
+                                </span>
+                                <span class="ml-1 font-bold ${assign.grupo ? 'text-emerald-400' : 'text-slate-600'}">
+                                    ${assign.grupo ? 'G' + assign.grupo : ''}
+                                </span>
+                            </td>
+
+                            <td class="p-3 text-center">
+                                <button onclick="openEditModal('${s.ra}')" title="Editar" class="text-blue-400 hover:text-blue-300 mr-3 transition-colors">
+                                    ✏️
+                                </button>
+                                ${currentLab === 'maker' ? `
+                                    <button onclick="deleteStudent('${s.id}')" title="Excluir" class="text-red-400 hover:text-red-300 transition-colors">
+                                        🗑️
+                                    </button>
+                                ` : '<span title="Apenas Admin Maker pode excluir" class="opacity-20 grayscale cursor-not-allowed">🗑️</span>'}
+                            </td>
+                        </tr>`;
+                    }).join('')}
             </tbody>
         </table>`;
 }
 
        function openEditModal(ra) {
+    // 1. Localiza os dados fixos do aluno
     const s = allStudents.find(x => x.ra === ra);
-    document.getElementById('modal-title').innerText = "Editar Aluno";
+    if (!s) return showToast("Aluno não encontrado", "error");
+
+    // 2. Localiza os dados específicos do laboratório atual (Maker ou Ciências)
+    const assign = allAssignments.find(a => 
+        a.ra_aluno === ra && 
+        a.disciplina === currentLab
+    ) || { lado: null, grupo: null };
+
+    // 3. Atualiza o título do Modal com o contexto atual
+    document.getElementById('modal-title').innerText = `Editar Aluno (${currentLab.toUpperCase()})`;
     
-    // Preenche os dropdowns primeiro
+    // 4. Preenche os Dropdowns (Sede, Série, Turma)
     populateModalDropdowns(s);
     
+    // 5. Preenche os campos do formulário
     document.getElementById('m-nome').value = s.nome_aluno;
     document.getElementById('m-ra').value = s.ra;
-    document.getElementById('m-parte').value = s.parte_sala || '';
-    document.getElementById('m-grupo').value = s.grupo || '';
+    document.getElementById('m-parte').value = assign.lado || '';
+    document.getElementById('m-grupo').value = assign.grupo || '';
+
+    // 6. TRAVA DE SEGURANÇA (A essência do Passo 3.3)
+    // Se o laboratório logado for 'ciencias', bloqueamos os campos fixos
+    const isReadOnly = (currentLab === 'ciencias');
+
+    document.getElementById('m-nome').disabled = isReadOnly;
+    document.getElementById('m-ra').disabled = isReadOnly;
+    document.getElementById('m-sede').disabled = isReadOnly;
+    document.getElementById('m-serie').disabled = isReadOnly;
+    document.getElementById('m-turma').disabled = isReadOnly;
+
+    // Adiciona um estilo visual de "bloqueado" para os campos desativados
+    const fixedFields = ['m-nome', 'm-ra', 'm-sede', 'm-serie', 'm-turma'];
+    fixedFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (isReadOnly) {
+            el.classList.add('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+        } else {
+            el.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+        }
+    });
+
+    // 7. Mostra o Modal
     document.getElementById('student-modal').classList.remove('hidden');
 }
 
@@ -1553,13 +1674,15 @@ function quickSelectHalf() {
 
     // --- INICIALIZAÇÃO ---
     window.onload = () => {
-        if(sessionStorage.getItem('isAuth') === 'true') {
-            isAuthenticated = true;
-            refreshData().then(() => renderManagementScreen());
-        } else {
-            showLoginScreen();
-        }
-    };
+    if(sessionStorage.getItem('isAuth') === 'true') {
+        isAuthenticated = true;
+        currentLab = sessionStorage.getItem('currentLab') || 'maker';
+        currentUser = sessionStorage.getItem('userRole') || 'admin_maker';
+        refreshData().then(() => renderManagementScreen());
+    } else {
+        showLoginScreen();
+    }
+};
 
     // (Funções de utilidade como formatDate, handleLogout, close modals seguem o padrão)
     function formatDate(d) { return d.toLocaleDateString('pt-BR'); }
