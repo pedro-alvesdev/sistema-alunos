@@ -445,46 +445,65 @@ async function updateDateFromPicker(val) {
         <div class="min-h-full p-4 md:p-8">
             <div class="max-w-7xl mx-auto">
                 ${renderNavigationHeader()}
+                
                 <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-700 mb-6 no-print shadow-lg">
-    <button onclick="currentLab='maker'; generateRanking();" 
-        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'maker' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
-        RANKING MAKER
-    </button>
-    <button onclick="currentLab='ciencias'; generateRanking();" 
-        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'ciencias' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
-        RANKING CIÊNCIAS
-    </button>
-</div>
+                    <button onclick="currentLab='maker'; generateRanking();" 
+                        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'maker' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
+                        RANKING MAKER
+                    </button>
+                    <button onclick="currentLab='ciencias'; generateRanking();" 
+                        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'ciencias' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
+                        RANKING CIÊNCIAS
+                    </button>
+                </div>
                 
                 <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 shadow-xl no-print">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Sede</label>
-                            <select id="res-sede" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs"></select>
+                            <select id="res-sede" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
                         </div>
                         <div>
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Série</label>
-                            <select id="res-serie" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs"></select>
+                            <select id="res-serie" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Lado</label>
+                            <select id="res-lado" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todos os Lados</option>
+                                <option value="A">Lado A</option>
+                                <option value="B">Lado B</option>
+                            </select>
                         </div>
                         <div class="flex items-end gap-2">
-                            <button onclick="window.print()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs">🖨️ Imprimir Relatório</button>
+                            <button onclick="window.print()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-blue-900/20">
+                                🖨️ Imprimir Relatório
+                            </button>
                         </div>
                     </div>
                 </div>
 
                 <div id="results-content" class="space-y-8">
-                    <p class="text-slate-500 text-center py-20 italic">Carregando dados...</p>
+                    <div class="text-center py-20">
+                        <div class="loader-spinner mx-auto mb-4"></div>
+                        <p class="text-slate-500 italic text-sm">Organizando dados do ranking...</p>
+                    </div>
                 </div>
             </div>
         </div>`;
 
-    // Popula filtros de resultados
-    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
-    const series = [...new Set(allStudents.map(s => s.serie))].sort();
-   document.getElementById('res-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
-    document.getElementById('res-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    // 1. Extrai valores únicos para popular os filtros
+    const sedes = [...new Set(allStudents.map(s => s.sede))].filter(Boolean).sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].filter(Boolean).sort();
     
-    // IMPORTANTE: Dispara o ranking assim que a tela abre
+    const sedeSelect = document.getElementById('res-sede');
+    const serieSelect = document.getElementById('res-serie');
+
+    // 2. Preenche Sede e Série
+    if (sedeSelect) sedeSelect.innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    if (serieSelect) serieSelect.innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    
+    // 3. Dispara a geração inicial do ranking com um pequeno delay para garantir que o DOM está pronto
     setTimeout(() => {
         generateRanking();
     }, 100);
@@ -493,27 +512,35 @@ async function updateDateFromPicker(val) {
 async function generateRanking() {
     const sede = document.getElementById('res-sede').value;
     const serie = document.getElementById('res-serie').value;
+    const ladoFiltro = document.getElementById('res-lado').value;
     const container = document.getElementById('results-content');
 
     if (!sede || !serie) return;
 
-    showLoading("Organizando ranking por grupos e lados...");
+    showLoading("Organizando ranking detalhado...");
 
     try {
-        // 1. Busca notas filtrando por SEDE, SÉRIE e LABORATÓRIO ativo
-        const { data: evals, error } = await _supabase
+        // 1. Consulta ao Supabase com filtros de Sede, Série e Disciplina ativa
+        let query = _supabase
             .from('evaluations_fetec')
             .select('*')
             .eq('sede', sede)
             .eq('serie', serie)
             .eq('disciplina', currentLab);
 
+        // Se o usuário filtrou por um lado específico, adiciona à query
+        if (ladoFiltro !== 'todos') {
+            query = query.eq('lado', ladoFiltro);
+        }
+
+        const { data: evals, error } = await query;
+
         if (error) throw error;
 
         if (!evals || evals.length === 0) {
             container.innerHTML = `
                 <div class="text-center py-20 bg-slate-900/40 rounded-2xl border border-dashed border-slate-700">
-                    <p class="text-slate-500 italic">Nenhum resultado encontrado para ${currentLab.toUpperCase()} em ${sede} - ${serie}.</p>
+                    <p class="text-slate-500 italic">Nenhum resultado encontrado para este filtro.</p>
                 </div>`;
             return;
         }
@@ -521,19 +548,18 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-            // SOLUÇÃO DO ERRO: A chave agora diferencia Grupo 1-A de Grupo 1-B
-            // Se for individual usa o RA, se for grupo usa a combinação Grupo+Lado+Turma
+            // CHAVE ÚNICA: Garante que Lado A e Lado B sejam linhas diferentes no ranking
             const key = e.ra_aluno ? e.ra_aluno : `g${e.grupo}-L${e.lado}-${e.nome_turma}`;
 
             if (!processado[key]) {
                 let identificacao = "";
                 
                 if (e.ra_aluno) {
-                    // Busca nome do aluno individual (RA)
+                    // Busca nome individual
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca integrantes do grupo filtrando obrigatoriamente por GRUPO E LADO
+                    // Busca integrantes do grupo filtrando por GRUPO E LADO
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
@@ -548,7 +574,7 @@ async function generateRanking() {
                 }
 
                 processado[key] = { 
-                    key: key, // Necessário para o pop-up de detalhes/log
+                    key: key, 
                     nome: identificacao, 
                     avaliacoes: [], 
                     turma: e.nome_turma,
@@ -556,33 +582,29 @@ async function generateRanking() {
                 };
             }
             
-            // Média das 5 notas dadas por este avaliador
+            // Calcula a média das competências deste lançamento específico
             const mediaAvaliador = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
             processado[key].avaliacoes.push(mediaAvaliador);
             
-            // Se um dos avaliadores marcou como apto, ele sobe para a lista FETEC
+            // Se algum avaliador marcou como apto, o grupo entra na lista de selecionados
             if (e.apto_fetec) processado[key].apto = true;
         });
 
-        // 2. Calcula a média final entre todos os avaliadores que deram nota para este grupo/aluno
+        // 2. Calcula a média final (caso haja múltiplos avaliadores para o mesmo grupo)
         const todos = Object.values(processado).map(obj => {
             const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
             obj.mediaFinal = soma / obj.avaliacoes.length;
             return obj;
-        }).sort((a, b) => b.mediaFinal - a.mediaFinal); // Ordena do 1º ao último
+        }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-        // 3. Separação visual das tabelas
+        // 3. Separação em Aptos e Geral
         const listaAptos = todos.filter(r => r.apto === true);
         const listaGeral = todos.filter(r => r.apto !== true);
 
         let htmlFinal = '';
-        
-        // Seção Dourada (Aptos)
         if (listaAptos.length > 0) {
             htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC (${currentLab.toUpperCase()})`, "border-amber-500/50 bg-amber-500/5 shadow-amber-900/10", "text-amber-400");
         }
-        
-        // Seção Cinza (Geral)
         if (listaGeral.length > 0) {
             htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
         }
@@ -590,8 +612,8 @@ async function generateRanking() {
         container.innerHTML = htmlFinal;
 
     } catch (err) {
-        console.error("Erro crítico no Ranking:", err);
-        showToast("Erro ao processar ranking. Verifique o console.", "error");
+        console.error("Erro no Ranking:", err);
+        showToast("Erro ao carregar ranking", "error");
     } finally {
         hideLoading();
     }
@@ -755,10 +777,24 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
 
     if (!cont) return;
 
-    // 1. Filtra a lista base de alunos daquela Sede/Série/Turma
+    // --- BARREIRA DE FILTROS OBRIGATÓRIOS ---
+    // Verifica se os campos básicos foram selecionados
+    const filtrosFaltando = !sede || !serie || !turma || lado === 'todos';
+
+    if (filtrosFaltando) {
+        cont.innerHTML = `
+            <div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+                <div class="mb-4 text-blue-500 text-4xl animate-pulse">🔍</div>
+                <p class="text-white font-bold text-lg">Aguardando Filtros</p>
+                <p class="text-slate-500 text-sm mt-2">Selecione <b>Sede, Série, Turma e Lado</b> para carregar os grupos.</p>
+            </div>`;
+        return; 
+    }
+
+    // 1. Filtra a lista base de alunos daquela Turma
     let listaBase = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
     
-    // 2. Vincula os alunos aos seus respectivos Lados e Grupos do laboratório atual (Maker ou Ciências)
+    // 2. Vincula aos Grupos/Lados do Laboratório Atual
     const listaComVinculo = listaBase.map(aluno => {
         const vinculo = allAssignments.find(a => 
             a.ra_aluno === aluno.ra && 
@@ -768,59 +804,49 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         return { ...aluno, currentLado: vinculo.lado, currentGrupo: vinculo.grupo };
     });
 
-    // 3. Aplica o filtro de LADO (Obrigatório para separar A de B) e GRUPO
-    let listaFiltrada = listaComVinculo;
+    // 3. Filtro Rígido de Lado (Indispensável para separar A de B)
+    let listaFiltrada = listaComVinculo.filter(s => s.currentLado === lado);
     
-    if (lado !== 'todos') {
-        listaFiltrada = listaFiltrada.filter(s => s.currentLado === lado);
-    }
-    
+    // Filtro opcional de Grupo
     if (grupoSel !== 'todos') {
         listaFiltrada = listaFiltrada.filter(s => String(s.currentGrupo) === grupoSel);
     }
 
-    // Se a lista estiver vazia após os filtros, avisa o usuário
+    // Validação de lista vazia após os filtros
     if (listaFiltrada.length === 0) {
         cont.innerHTML = `
             <div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
-                <p class="text-slate-500 italic text-sm">Nenhum aluno encontrado para ${currentLab.toUpperCase()} no Lado ${lado} desta turma.</p>
+                <p class="text-slate-500 italic text-sm">Nenhum aluno encontrado no <b>Lado ${lado}</b> para esta configuração.</p>
             </div>`;
         return;
     }
 
-    // 4. Lógica de Exibição (Individual para 6º ano, Coletivo para os demais)
+    // 4. Renderização (Individual ou Grupo)
     if (serie.includes("6")) {
-        // Renderização Individual
         cont.innerHTML = listaFiltrada
             .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
             .map(aluno => renderEvalCard(aluno.nome_aluno, aluno.ra, aluno.currentGrupo))
             .join('');
     } else {
-        // Renderização por Grupo (Coletiva)
         const gruposNoLado = [...new Set(listaFiltrada.map(s => s.currentGrupo))].filter(g => g).sort((a, b) => a - b);
         
         cont.innerHTML = gruposNoLado.map(g => {
             const integrantes = listaFiltrada
                 .filter(s => s.currentGrupo === g)
                 .map(s => s.nome_aluno)
-                .sort()
                 .join(', ');
 
-            return renderEvalCard(`Grupo ${g}`, null, g, integrantes);
+            // Título do card agora é ultra-específico
+            return renderEvalCard(`LADO ${lado} - GRUPO ${g}`, null, g, integrantes);
         }).join('');
     }
     
-    // 5. Carrega notas existentes e ativa a Média em Tempo Real nos cards renderizados
+    // 5. Aciona carregamento de notas e cálculo de médias
     setTimeout(() => {
-        loadExistingEvaluations(); // Busca notas já salvas no Supabase para esta turma
-        
-        // Ativa o cálculo de média inicial para cada card (caso já tenha nota carregada)
-        const allCards = document.querySelectorAll('[id^="card-"]');
-        allCards.forEach(card => {
+        loadExistingEvaluations(); 
+        document.querySelectorAll('[id^="card-"]').forEach(card => {
             const cardId = card.id.replace('card-', '');
-            if (typeof calculateLiveMedia === "function") {
-                calculateLiveMedia(cardId);
-            }
+            calculateLiveMedia(cardId);
         });
     }, 200);
 }
