@@ -471,6 +471,7 @@ async function generateRanking() {
     showLoading("Organizando resultados e nomes...");
 
     try {
+        // 1. Busca notas filtrando por SEDE, SÉRIE e pela DISCIPLINA do laboratório logado
         const { data: evals, error } = await _supabase
             .from('evaluations_fetec')
             .select('*')
@@ -481,39 +482,39 @@ async function generateRanking() {
         if (error) throw error;
 
         if (!evals || evals.length === 0) {
-            container.innerHTML = `<div class="text-center py-20 text-slate-500 italic">Nenhum resultado encontrado.</div>`;
+            container.innerHTML = `<div class="text-center py-20 text-slate-500 italic">Nenhum resultado encontrado para ${currentLab.toUpperCase()}.</div>`;
             return;
         }
 
         const processado = {};
 
         evals.forEach(e => {
+            // Criamos uma chave única para agrupar notas (RA ou Grupo+Turma)
             const key = e.ra_aluno || `grupo-${e.grupo}-${e.nome_turma}`;
 
             if (!processado[key]) {
-                // BUSCA DE NOMES:
                 let identificacao = "";
                 
                 if (e.ra_aluno) {
-                    // Se for individual, busca o nome pelo RA
+                    // Busca nome do aluno individual
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca os RAs dos alunos que pertencem a este grupo no laboratório atual
+                    // Busca nomes dos integrantes do grupo
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
 
-                    // Busca os nomes desses alunos na lista global
                     const integrantes = allStudents
                         .filter(s => rasNoGrupo.includes(s.ra) && s.nome_turma === e.nome_turma)
                         .map(s => s.nome_aluno)
                         .join(', ');
                     
-                    identificacao = `Grupo ${e.grupo}: ${integrantes || 'Alunos não localizados'}`;
+                    identificacao = `Grupo ${e.grupo}: ${integrantes || 'Integrantes não localizados'}`;
                 }
 
                 processado[key] = { 
+                    key: key, // Necessário para o pop-up de histórico
                     nome: identificacao, 
                     avaliacoes: [], 
                     turma: e.nome_turma,
@@ -521,23 +522,29 @@ async function generateRanking() {
                 };
             }
             
-            const mediaIndiv = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
-            processado[key].avaliacoes.push(mediaIndiv);
+            // Média simples das 5 competências do avaliador
+            const mediaAvaliador = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
+            processado[key].avaliacoes.push(mediaAvaliador);
+            
+            // Se algum avaliador marcou como apto, ele sobe para a lista de aprovados
             if (e.apto_fetec) processado[key].apto = true;
         });
 
+        // Converte o objeto em array e calcula a média final (entre todos os avaliadores)
         const todos = Object.values(processado).map(obj => {
             const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
             obj.mediaFinal = soma / obj.avaliacoes.length;
             return obj;
         }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
+        // Separação por Aptidão
         const listaAptos = todos.filter(r => r.apto === true);
         const listaGeral = todos.filter(r => r.apto !== true);
 
+        // Renderização final das tabelas
         let htmlFinal = '';
         if (listaAptos.length > 0) {
-            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC (${currentLab.toUpperCase()})`, "border-amber-500/50 bg-amber-500/5", "text-amber-400");
+            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC (${currentLab.toUpperCase()})`, "border-amber-500/50 bg-amber-500/5 shadow-amber-900/10", "text-amber-400");
         }
         if (listaGeral.length > 0) {
             htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
@@ -547,7 +554,7 @@ async function generateRanking() {
 
     } catch (err) {
         console.error(err);
-        showToast("Erro ao processar nomes no ranking", "error");
+        showToast("Erro ao processar ranking", "error");
     } finally {
         hideLoading();
     }
@@ -815,38 +822,42 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
 }
 
     async function saveFetecEval(ra, grupo, cardId) {
-
-      const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
-    let notasInvalidas = false;
-    
-    inputs.forEach(i => {
-        if (parseFloat(i.value) > 10) notasInvalidas = true;
-    });
+    // 1. Validação de Segurança: Bloqueia se houver nota > 10
+    const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
+    const notasInvalidas = Array.from(inputs).some(i => parseFloat(i.value) > 10);
 
     if (notasInvalidas) {
-        showToast("⚠️ Existem notas maiores que 10. Corrija antes de salvar!", "error");
-        return; // Interrompe o salvamento
-    }
-    // 1. Validação do Nome do Professor
-    const prof = document.getElementById('evaluator-name').value.trim();
-    if (!prof) {
-        showToast("⚠️ Por favor, digite o seu nome no topo da página!", "error");
-        document.getElementById('evaluator-name').focus();
-        document.getElementById('evaluator-name').classList.add('border-red-500');
+        showToast("⚠️ Nota máxima permitida é 10. Corrija o valor!", "error");
         return;
     }
 
-    // 2. Recolha das Notas (Convertendo para Float para aceitar decimais)
+    // 2. Validação do Nome do Professor
+    const prof = document.getElementById('evaluator-name').value.trim();
+    if (!prof) {
+        showToast("⚠️ Digite seu nome no topo da página!", "error");
+        document.getElementById('evaluator-name').focus();
+        return;
+    }
+
+    // 3. Feedback Visual de Carregamento
+    const card = document.getElementById(`card-${cardId}`);
+    const btn = card.querySelector('button');
+    const originalBtnText = btn.innerText;
+    
+    btn.disabled = true;
+    btn.innerText = "⏳ Gravando...";
+    card.style.opacity = "0.7";
+
+    // 4. Coleta das Notas e Montagem do Objeto (Payload)
     const getNota = (sub) => parseFloat(document.getElementById(`nota-${cardId}-${sub}`).value) || 0;
 
     const payload = {
         ra_aluno: ra !== 'null' ? ra : null,
         grupo: grupo !== 'null' ? parseInt(grupo) : null,
         nome_professor: prof,
-        disciplina: currentLab,
+        disciplina: currentLab, // Identifica se é Maker ou Ciências
         data_eval: new Date().toISOString().split('T')[0],
         
-        // Notas individuais
         nota_oralidade: getNota('Oralidade'),
         nota_postura: getNota('Postura'),
         nota_clareza: getNota('Clareza'),
@@ -858,50 +869,27 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         sede: document.getElementById('ev-sede').value,
         serie: document.getElementById('ev-serie').value,
         nome_turma: document.getElementById('ev-turma').value,
-        lado: document.getElementById('ev-lado').value,
         usuario_sistema: currentUser
     };
 
-    // 3. Feedback Visual de Carregamento
-    const card = document.getElementById(`card-${cardId}`);
-    const btn = card.querySelector('button');
-    const originalBtnText = btn.innerText;
-    
-    btn.disabled = true;
-    btn.innerText = "⏳ A gravar...";
-    card.style.opacity = "0.7";
+    // 5. Envio Único para o Supabase
+    const { error: dbError } = await _supabase.from('evaluations_fetec').insert([payload]);
 
-    // 4. Envio para o Supabase
-    const { error } = await _supabase.from('evaluations_fetec').insert([payload]);
-
-    if (error) {
-        showToast("❌ Erro ao guardar: " + error.message, "error");
+    if (dbError) {
+        console.error("Erro Supabase:", dbError);
+        showToast("❌ Erro ao salvar: " + dbError.message, "error");
         btn.disabled = false;
         btn.innerText = originalBtnText;
         card.style.opacity = "1";
     } else {
-        showToast("✅ Avaliação enviada com sucesso!", "success");
-        
-        // Bloqueia o card para evitar duplicados na mesma sessão
-        btn.innerText = "✅ Gravado";
-        btn.classList.replace('bg-emerald-600', 'bg-slate-700');
-        card.classList.add('border-emerald-500', 'pointer-events-none');
-        card.style.opacity = "0.8";
-    }
-      const { error } = await _supabase.from('evaluations_fetec').insert([payload]);
-
-    if (error) {
-        showToast("❌ Erro ao guardar", "error");
-        // ... reativa o botão ...
-    } else {
         showToast("✅ Avaliação enviada!", "success");
         
-        // Estiliza o card atual como concluído
-        const currentCard = document.getElementById(`card-${cardId}`);
-        currentCard.classList.add('opacity-60', 'border-emerald-500');
-        currentCard.querySelector('button').innerText = "✅ Salvo";
+        // 6. Finalização Visual do Card
+        card.classList.add('opacity-60', 'border-emerald-500', 'pointer-events-none');
+        btn.innerText = "✅ Salvo";
+        btn.classList.replace('bg-emerald-600', 'bg-slate-700');
 
-        // AUTOMACÃO: Chama a função para focar no próximo aluno
+        // 7. Automação: Pula para o próximo aluno/grupo
         focusNextCard(cardId);
     }
 }
