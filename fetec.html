@@ -2126,6 +2126,9 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     document.getElementById('m-serie').disabled = isReadOnly;
     document.getElementById('m-turma').disabled = isReadOnly;
 
+         document.getElementById('m-parte').disabled = false; 
+    document.getElementById('m-grupo').disabled = false;
+
     // Adiciona um estilo visual de "bloqueado" para os campos desativados
     const fixedFields = ['m-nome', 'm-ra', 'm-sede', 'm-serie', 'm-turma'];
     fixedFields.forEach(id => {
@@ -2136,6 +2139,9 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
             el.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
         }
     });
+
+         document.getElementById('m-parte').classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+    document.getElementById('m-grupo').classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
 
     // 7. Mostra o Modal
     document.getElementById('student-modal').classList.remove('hidden');
