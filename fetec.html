@@ -680,8 +680,8 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     // ALTERAÇÃO AQUI: Mudamos de verde para azul (mesmo gradiente do Maker ou similar)
     const isMaker = (currentLab === 'maker');
     app.style.background = isMaker 
-        ? `linear-gradient(135deg, ${config.background_color}, #1e293b)` 
-        : `linear-gradient(135deg, #1e1b4b, #0f172a)`; // Azul escuro/Indigo para Ciências
+      ? `linear-gradient(135deg, ${config.background_color}, #1e293b)` 
+        : `linear-gradient(135deg, #0c4a6e, #0f172a)`;
       
     app.innerHTML = `
     // ... resto do código igual
@@ -1046,25 +1046,22 @@ function loadPersistentEvalFilters() {
       applyAttendanceFilters();
     }
 
-    async function loadExistingEvaluations() {
+   async function loadExistingEvaluations() {
     const sede = document.getElementById('ev-sede').value;
     const turma = document.getElementById('ev-turma').value;
     const prof = document.getElementById('evaluator-name').value.trim();
 
-    if (!prof) return; // Só carrega se o professor se identificou
+    if (!prof) return;
 
-    // Busca as avaliações deste professor para esta turma hoje
     const { data, error } = await _supabase
         .from('evaluations_fetec')
         .select('*')
         .eq('sede', sede)
         .eq('nome_turma', turma)
-        .eq('nome_professor', prof);
+        .eq('nome_professor', prof)
+        .eq('disciplina', currentLab); // Filtro importante para não misturar labs
 
-    if (error) {
-        console.error("Erro ao carregar avaliações:", error);
-        return;
-    }
+    if (error) return;
 
     if (data && data.length > 0) {
         data.forEach(eval => {
@@ -1072,18 +1069,18 @@ function loadPersistentEvalFilters() {
             const card = document.getElementById(`card-${id}`);
             
             if (card) {
-                // Preenche os campos de nota
-                document.getElementById(`nota-${id}-Oralidade`).value = eval.nota_oralidade;
-                document.getElementById(`nota-${id}-Postura`).value = eval.nota_postura;
-                document.getElementById(`nota-${id}-Clareza`).value = eval.nota_clareza;
-                document.getElementById(`nota-${id}-Dominio`).value = eval.nota_dominio;
-                document.getElementById(`nota-${id}-Transmissao`).value = eval.nota_transmissao;
+                // Preenche apenas os 3 campos que existem agora
+                const inputO = document.getElementById(`nota-${id}-Oralidade`);
+                const inputP = document.getElementById(`nota-${id}-Postura`);
+                const inputD = document.getElementById(`nota-${id}-Dominio`);
+
+                if(inputO) inputO.value = eval.nota_oralidade;
+                if(inputP) inputP.value = eval.nota_postura;
+                if(inputD) inputD.value = eval.nota_dominio;
                 
-                // Preenche observação e aptidão
                 document.getElementById(`obs-${id}`).value = eval.observacao || '';
                 document.getElementById(`apto-${id}`).checked = eval.apto_fetec;
 
-                // Estiliza o card para indicar que já foi salvo
                 const btn = card.querySelector('button');
                 btn.innerText = "✅ Atualizar Avaliação";
                 btn.classList.replace('bg-emerald-600', 'bg-blue-600');
@@ -1748,7 +1745,7 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
         const assignmentData = {
             ra_aluno: ra,
             disciplina: currentLab,
-            lado: document.getElementById('m-parte').value || null,
+            lado: document.getElementById('m-parte').value || null, // Garante que usa 'lado'
             grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
         };
 
@@ -1800,29 +1797,30 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     if (selectedStudentsForAssign.size === 0) return alert("Selecione alunos na lista!");
     if (!value && field === 'grupo') return alert("Insira um número de grupo.");
 
-    const confirmacao = confirm(`Aplicar "${value}" em ${field} (${currentLab.toUpperCase()}) para ${selectedStudentsForAssign.size} alunos?`);
+    const confirmacao = confirm(`Aplicar "${value}" em ${field === 'parte_sala' ? 'LADO' : 'GRUPO'} para ${selectedStudentsForAssign.size} alunos?`);
     if (!confirmacao) return;
 
     showToast("Atualizando em massa...", "info");
 
-    const ras = Array.from(selectedStudentsForAssign).map(id => {
+    const payloads = Array.from(selectedStudentsForAssign).map(id => {
         const s = allStudents.find(x => x.id === id);
-        return s ? s.ra : null;
+        if (!s) return null;
+        return {
+            ra_aluno: s.ra,
+            disciplina: currentLab,
+            // CORREÇÃO AQUI: Se o campo for 'parte_sala', envia como 'lado'
+            lado: field === 'parte_sala' ? value : (getStudentAssignment(s.ra).lado),
+            grupo: field === 'grupo' ? parseInt(value) : (getStudentAssignment(s.ra).grupo)
+        };
     }).filter(Boolean);
-
-    // Prepara os dados para a nova tabela de vínculos
-    const payloads = ras.map(ra => ({
-        ra_aluno: ra,
-        disciplina: currentLab,
-        [field]: field === 'grupo' ? parseInt(value) : value
-    }));
 
     const { error } = await _supabase
         .from('lab_assignments')
         .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
     if (error) {
-        showToast("Erro na atualização em massa", "error");
+        console.error("Erro no Banco:", error);
+        showToast("Erro na atribuição: " + error.message, "error");
     } else {
         showToast("Atualização concluída!", "success");
         selectedStudentsForAssign.clear();
