@@ -517,45 +517,39 @@ async function generateRanking() {
 
     if (!sede || !serie) return;
 
-    // Estado visual de carregamento
     container.innerHTML = `
         <div class="text-center py-20">
             <div class="loader-spinner mx-auto mb-4"></div>
-            <p class="text-slate-500 italic">Consolidando notas de ${sede}...</p>
+            <p class="text-slate-500 italic">Consolidando notas filtradas...</p>
         </div>`;
 
     try {
-        // 1. Busca todas as avaliações da Sede, Série e Laboratório atual
-        let query = _supabase
+        // 1. Busca TODAS as avaliações da série/sede para o lab atual
+        let { data: evals, error } = await _supabase
             .from('evaluations_fetec')
             .select('*')
             .eq('sede', sede)
             .eq('serie', serie)
             .eq('disciplina', currentLab);
 
-        if (ladoFiltro !== 'todos') {
-            query = query.eq('lado', ladoFiltro);
-        }
-
-        const { data: evals, error } = await query;
-
         if (error) throw error;
 
         if (!evals || evals.length === 0) {
-            container.innerHTML = `
-                <div class="text-center py-20 bg-slate-900/40 rounded-2xl border border-dashed border-slate-700">
-                    <p class="text-slate-500 italic">Nenhum resultado encontrado para esta configuração.</p>
-                </div>`;
+            container.innerHTML = `<p class="text-center py-20 text-slate-500">Nenhuma avaliação encontrada.</p>`;
             return;
+        }
+
+        // --- FILTRO DE SEGURANÇA (O PONTO CHAVE) ---
+        // Aqui filtramos as avaliações para manter apenas o Lado selecionado no filtro da tela
+        if (ladoFiltro !== 'todos') {
+            evals = evals.filter(e => e.lado === ladoFiltro);
         }
 
         const processado = {};
 
         evals.forEach(e => {
-            // CHAVE DE AGRUPAMENTO: RA (se individual) ou Sede-Turma-Lado-Grupo (se coletivo)
-            const key = e.ra_aluno 
-                ? e.ra_aluno 
-                : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
+            // Chave única para agrupar notas de diferentes jurados para o mesmo alvo
+            const key = e.ra_aluno ? e.ra_aluno : `${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
             if (!processado[key]) {
                 let identificacao = "";
@@ -564,21 +558,20 @@ async function generateRanking() {
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca integrantes vinculados para exibição no ranking
+                    // Busca os nomes dos integrantes reais para não mostrar uma lista genérica
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
 
                     const integrantes = allStudents
-                        .filter(s => rasNoGrupo.includes(s.ra) && s.sede === e.sede)
+                        .filter(s => rasNoGrupo.includes(s.ra))
                         .map(s => s.nome_aluno)
-                        .sort()
                         .join(', ');
                     
                     identificacao = `
                         <div class="flex flex-col">
                             <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado} - Grupo ${e.grupo}</span>
-                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Sem integrantes vinculados'}</span>
+                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Sem integrantes listados'}</span>
                         </div>`;
                 }
 
@@ -587,49 +580,38 @@ async function generateRanking() {
                     nome: identificacao, 
                     avaliacoes: [], 
                     turma: e.nome_turma, 
-                    sede: e.sede, 
                     apto: false 
                 };
             }
             
-            // DECLARAÇÃO DAS NOTAS (Garante que n1, n2, n3 existam e sejam números)
             const n1 = parseFloat(e.nota_oralidade) || 0;
             const n2 = parseFloat(e.nota_postura) || 0;
             const n3 = parseFloat(e.nota_dominio) || 0; 
             
-            // MÉDIA CALCULADA PELOS 3 CRITÉRIOS ATUAIS
             const mediaDesteAvaliador = (n1 + n2 + n3) / 3;
             processado[key].avaliacoes.push(mediaDesteAvaliador);
-            
-            // Se um jurado marcou como apto, o projeto ganha a estrela FETEC
             if (e.apto_fetec) processado[key].apto = true;
         });
 
-        // 2. Cálculo da Média Final (Média das Médias dos Jurados)
+        // 2. Calcula a média final das médias dos jurados
         const rankingFinal = Object.values(processado).map(obj => {
-            const somaDasMedias = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
-            obj.mediaFinal = somaDasMedias / obj.avaliacoes.length;
+            const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
+            obj.mediaFinal = soma / obj.avaliacoes.length;
             return obj;
         }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-        // 3. Renderização
+        // 3. Renderiza apenas os grupos que restaram após o filtro
         const listaAptos = rankingFinal.filter(r => r.apto === true);
         const listaGeral = rankingFinal.filter(r => r.apto !== true);
 
         let htmlFinal = '';
-        
-        if (listaAptos.length > 0) {
-            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC - ${sede}`, "border-amber-500/30 bg-amber-500/5", "text-amber-400");
-        }
-        
-        if (listaGeral.length > 0) {
-            htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral - ${sede}`, "border-slate-700 bg-slate-900/50", "text-slate-400");
-        }
+        if (listaAptos.length > 0) htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC`, "border-amber-500/30 bg-amber-500/5", "text-amber-400");
+        if (listaGeral.length > 0) htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
 
-        container.innerHTML = htmlFinal;
+        container.innerHTML = htmlFinal || `<p class="text-center py-20 text-slate-500">Nenhum resultado para os filtros atuais.</p>`;
 
     } catch (err) {
-        console.error("Erro crítico no Ranking:", err);
+        console.error("Erro no Ranking:", err);
         showToast("Erro ao processar ranking", "error");
     }
 }
