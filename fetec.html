@@ -517,7 +517,7 @@ async function generateRanking() {
 
     if (!sede || !serie) return;
 
-    // Limpeza inicial para evitar "fantasmas" de buscas anteriores
+    // Estado visual de carregamento
     container.innerHTML = `
         <div class="text-center py-20">
             <div class="loader-spinner mx-auto mb-4"></div>
@@ -525,7 +525,7 @@ async function generateRanking() {
         </div>`;
 
     try {
-        // 1. Busca todas as avaliações da Sede e Série (independente de quem avaliou)
+        // 1. Busca todas as avaliações da Sede, Série e Laboratório atual
         let query = _supabase
             .from('evaluations_fetec')
             .select('*')
@@ -552,22 +552,25 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-    const key = e.ra_aluno ? e.ra_aluno : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
+            // CHAVE DE AGRUPAMENTO: RA (se individual) ou Sede-Turma-Lado-Grupo (se coletivo)
+            const key = e.ra_aluno 
+                ? e.ra_aluno 
+                : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
-    if (!processado[key]) {
+            if (!processado[key]) {
                 let identificacao = "";
                 
                 if (e.ra_aluno) {
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca integrantes oficiais do grupo para exibição
+                    // Busca integrantes vinculados para exibição no ranking
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
 
                     const integrantes = allStudents
-                        .filter(s => rasNoGrupo.includes(s.ra) && s.sede === e.sede && s.nome_turma === e.nome_turma)
+                        .filter(s => rasNoGrupo.includes(s.ra) && s.sede === e.sede)
                         .map(s => s.nome_aluno)
                         .sort()
                         .join(', ');
@@ -575,48 +578,48 @@ async function generateRanking() {
                     identificacao = `
                         <div class="flex flex-col">
                             <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado} - Grupo ${e.grupo}</span>
-                            <span class="text-[10px] text-slate-500 italic leading-tight">${integrantes || 'Alunos não vinculados'}</span>
+                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Sem integrantes vinculados'}</span>
                         </div>`;
                 }
-      // TRATAMENTO DE NOTAS PARA EVITAR NaN
-    const n1 = parseFloat(e.nota_oralidade) || 0;
-    const n2 = parseFloat(e.nota_postura) || 0;
-    const n3 = parseFloat(e.nota_dominio) || 0; // Domínio e Transmissão unificados
 
                 processado[key] = { 
                     key: key, 
                     nome: identificacao, 
-                    avaliacoes: [], // Aqui guardaremos as médias de cada professor
-                    turma: e.nome_turma,
-                    sede: e.sede,
-                    apto: false // Será true se pelo menos um jurado marcar como apto
+                    avaliacoes: [], 
+                    turma: e.nome_turma, 
+                    sede: e.sede, 
+                    apto: false 
                 };
             }
             
-            // Média das 3 notas deste avaliador específico
-            // MÉDIA CALCULADA POR 3
-    const mediaDesteAvaliador = (n1 + n2 + n3) / 3;
-    processado[key].avaliacoes.push(mediaDesteAvaliador);
-    
-    if (e.apto_fetec) processado[key].apto = true;
-});
+            // DECLARAÇÃO DAS NOTAS (Garante que n1, n2, n3 existam e sejam números)
+            const n1 = parseFloat(e.nota_oralidade) || 0;
+            const n2 = parseFloat(e.nota_postura) || 0;
+            const n3 = parseFloat(e.nota_dominio) || 0; 
+            
+            // MÉDIA CALCULADA PELOS 3 CRITÉRIOS ATUAIS
+            const mediaDesteAvaliador = (n1 + n2 + n3) / 3;
+            processado[key].avaliacoes.push(mediaDesteAvaliador);
+            
+            // Se um jurado marcou como apto, o projeto ganha a estrela FETEC
+            if (e.apto_fetec) processado[key].apto = true;
+        });
 
-        // 2. Cálculo da Média das Médias (Consolidação de Jurados)
+        // 2. Cálculo da Média Final (Média das Médias dos Jurados)
         const rankingFinal = Object.values(processado).map(obj => {
             const somaDasMedias = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
             obj.mediaFinal = somaDasMedias / obj.avaliacoes.length;
-            obj.qtdJurados = obj.avaliacoes.length; // Guardamos quantos professores avaliaram
             return obj;
         }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-        // 3. Renderização das Tabelas (Aptos vs Geral)
+        // 3. Renderização
         const listaAptos = rankingFinal.filter(r => r.apto === true);
         const listaGeral = rankingFinal.filter(r => r.apto !== true);
 
         let htmlFinal = '';
         
         if (listaAptos.length > 0) {
-            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC - ${sede}`, "border-amber-500/50 bg-amber-500/5 shadow-amber-900/10", "text-amber-400");
+            htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC - ${sede}`, "border-amber-500/30 bg-amber-500/5", "text-amber-400");
         }
         
         if (listaGeral.length > 0) {
@@ -627,9 +630,7 @@ async function generateRanking() {
 
     } catch (err) {
         console.error("Erro crítico no Ranking:", err);
-        showToast("Erro ao processar ranking das sedes", "error");
-    } finally {
-        hideLoading();
+        showToast("Erro ao processar ranking", "error");
     }
 }
 
