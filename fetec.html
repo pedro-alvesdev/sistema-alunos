@@ -552,13 +552,9 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-            // CHAVE DE AGRUPAMENTO: Sede + Turma + Lado + Grupo/RA
-            // Isso garante que o Grupo 1 do Lado A seja diferente do Grupo 1 do Lado B
-            const key = e.ra_aluno 
-                ? e.ra_aluno 
-                : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
+    const key = e.ra_aluno ? e.ra_aluno : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
-            if (!processado[key]) {
+    if (!processado[key]) {
                 let identificacao = "";
                 
                 if (e.ra_aluno) {
@@ -582,6 +578,10 @@ async function generateRanking() {
                             <span class="text-[10px] text-slate-500 italic leading-tight">${integrantes || 'Alunos não vinculados'}</span>
                         </div>`;
                 }
+      // TRATAMENTO DE NOTAS PARA EVITAR NaN
+    const n1 = parseFloat(e.nota_oralidade) || 0;
+    const n2 = parseFloat(e.nota_postura) || 0;
+    const n3 = parseFloat(e.nota_dominio) || 0; // Domínio e Transmissão unificados
 
                 processado[key] = { 
                     key: key, 
@@ -594,12 +594,12 @@ async function generateRanking() {
             }
             
             // Média das 3 notas deste avaliador específico
-            const mediaDesteAvaliador = (notaO + notaP + notaD) / 3;
-            processado[key].avaliacoes.push(mediaDesteAvaliador);
-            
-            // Regra de Aptidão: Se um jurado achar apto, o projeto sobe para a lista FETEC
-            if (e.apto_fetec) processado[key].apto = true;
-        });
+            // MÉDIA CALCULADA POR 3
+    const mediaDesteAvaliador = (n1 + n2 + n3) / 3;
+    processado[key].avaliacoes.push(mediaDesteAvaliador);
+    
+    if (e.apto_fetec) processado[key].apto = true;
+});
 
         // 2. Cálculo da Média das Médias (Consolidação de Jurados)
         const rankingFinal = Object.values(processado).map(obj => {
@@ -1195,17 +1195,13 @@ function loadPersistentEvalFilters() {
     let temErro = false;
 
     inputs.forEach(input => {
-        let val = parseFloat(input.value);
+        let val = parseFloat(input.value.toString().replace(',', '.'));
         
-        // Validação: Se for maior que 10
         if (val > 10) {
             temErro = true;
             input.classList.add('bg-red-900/50', 'border-red-500', 'text-red-200');
-            input.classList.remove('text-emerald-400', 'border-slate-600');
         } else {
             input.classList.remove('bg-red-900/50', 'border-red-500', 'text-red-200');
-            input.classList.add('text-emerald-400', 'border-slate-600');
-            
             if (!isNaN(val)) {
                 soma += val;
                 preenchidos++;
@@ -1219,10 +1215,10 @@ function loadPersistentEvalFilters() {
             display.innerText = "!!";
             display.className = "text-xl font-black text-red-500 animate-bounce";
         } else {
+            // DIVISOR ALTERADO PARA 3
             const media = preenchidos > 0 ? (soma / 3) : 0;
             display.innerText = media.toFixed(1);
             
-            // Cores baseadas na média
             if (media >= 9) display.className = "text-xl font-black text-yellow-400 leading-none";
             else if (media < 5 && media > 0) display.className = "text-xl font-black text-red-400 leading-none";
             else display.className = "text-xl font-black text-emerald-400 leading-none";
@@ -1498,7 +1494,7 @@ function updateEvalFilters() {
         `;
     }
 
-    async function showEvaluationLog(key) {
+   async function showEvaluationLog(key) {
     const modal = document.getElementById('log-modal');
     const body = document.getElementById('log-table-body');
     const title = document.getElementById('log-title');
@@ -1512,7 +1508,6 @@ function updateEvalFilters() {
 
     try {
         // 1. Identifica se a busca é por RA ou por Grupo Composto
-        // Formato da key: Sede-Turma-Lado-GNum
         const isGroup = key.includes('-G');
         let query = _supabase.from('evaluations_fetec').select('*').eq('disciplina', currentLab);
 
@@ -1528,7 +1523,6 @@ function updateEvalFilters() {
                          .eq('lado', lado)
                          .eq('grupo', grupoNum);
         } else {
-            // Se for individual, a key é o próprio RA
             query = query.eq('ra_aluno', key);
         }
 
@@ -1547,35 +1541,41 @@ function updateEvalFilters() {
 
         // 3. Renderiza as linhas (Uma para cada professor)
         body.innerHTML = data.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map(ev => {
-            const mediaIndiv = (ev.nota_oralidade + ev.nota_postura + ev.nota_clareza + ev.nota_dominio + ev.nota_transmissao) / 5;
+            
+            // CONVERSÃO E CÁLCULO PARA 3 CRITÉRIOS
+            const nOral = parseFloat(ev.nota_oralidade) || 0;
+            const nPost = parseFloat(ev.nota_postura) || 0;
+            const nDom  = parseFloat(ev.nota_dominio) || 0;
+            
+            const mediaIndiv = (nOral + nPost + nDom) / 3;
             
             return `
                 <tr class="border-b border-slate-800/50 hover:bg-white/5 transition-colors">
                     <td class="p-3">
                         <span class="font-bold text-blue-400 block">${ev.nome_professor}</span>
-                        <span class="text-[9px] text-slate-500 uppercase tracking-tighter">Avaliador</span>
+                        <span class="text-[9px] text-slate-500 uppercase tracking-tighter italic">Avaliador</span>
                     </td>
                     <td class="p-3">
-                        <div class="grid grid-cols-5 gap-1 text-[10px] font-mono text-slate-400">
-                            <div title="Oralidade">${ev.nota_oralidade}</div>
-                            <div title="Postura">${ev.nota_postura}</div>
-                            <div title="Clareza">${ev.nota_clareza}</div>
-                            <div title="Domínio">${ev.nota_dominio}</div>
-                            <div title="Transmissão">${ev.nota_transmissao}</div>
+                        <div class="grid grid-cols-3 gap-2 text-[10px] font-mono text-slate-400 text-center">
+                            <div class="bg-slate-800 rounded p-1" title="Oralidade">O: ${nOral.toFixed(1)}</div>
+                            <div class="bg-slate-800 rounded p-1" title="Postura">P: ${nPost.toFixed(1)}</div>
+                            <div class="bg-slate-800 rounded p-1" title="Domínio">D: ${nDom.toFixed(1)}</div>
                         </div>
                     </td>
                     <td class="p-3">
-                        <span class="text-sm font-black text-white bg-slate-800 px-2 py-1 rounded">${mediaIndiv.toFixed(2)}</span>
+                        <span class="text-sm font-black text-white bg-blue-600/20 border border-blue-500/30 px-2 py-1 rounded">
+                            ${mediaIndiv.toFixed(2)}
+                        </span>
                     </td>
                     <td class="p-3">
                         <p class="text-[11px] text-slate-400 italic leading-snug max-w-xs break-words">
-                            ${ev.observacao || '<span class="opacity-30">Sem observações.</span>'}
+                            ${ev.observacao || '<span class="opacity-20 text-[9px]">Nenhum comentário registrado.</span>'}
                         </p>
                     </td>
                     <td class="p-3 text-center">
                         ${ev.apto_fetec ? 
-                            '<span class="text-emerald-500" title="Apto para FETEC">✔</span>' : 
-                            '<span class="text-slate-700" title="Não selecionado">✘</span>'}
+                            '<span class="text-amber-500 text-lg" title="Apto para FETEC">★</span>' : 
+                            '<span class="text-slate-700" title="Não selecionado">☆</span>'}
                     </td>
                 </tr>
             `;
@@ -1583,7 +1583,7 @@ function updateEvalFilters() {
 
     } catch (err) {
         console.error("Erro no Histórico:", err);
-        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500">Falha ao conectar com o banco de dados.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500 font-bold">Falha ao conectar com o banco de dados.</td></tr>`;
     }
 }
 
