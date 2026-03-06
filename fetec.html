@@ -791,24 +791,22 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
 
     if (!cont) return;
 
-    // --- BARREIRA DE FILTROS OBRIGATÓRIOS ---
-    // Verifica se os campos básicos foram selecionados
-    const filtrosFaltando = !sede || !serie || !turma || lado === 'todos';
+    // Limpeza visual para evitar "lixo" de trocas anteriores
+    cont.innerHTML = ''; 
 
-    if (filtrosFaltando) {
-        cont.innerHTML = `
-            <div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
-                <div class="mb-4 text-blue-500 text-4xl animate-pulse">🔍</div>
-                <p class="text-white font-bold text-lg">Aguardando Filtros</p>
-                <p class="text-slate-500 text-sm mt-2">Selecione <b>Sede, Série, Turma e Lado</b> para carregar os grupos.</p>
-            </div>`;
+    // --- BARREIRA DE FILTROS OBRIGATÓRIOS ---
+    if (!sede || !serie || !turma) {
+        cont.innerHTML = `<div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+            <p class="text-white font-bold text-lg">Aguardando Filtros</p>
+            <p class="text-slate-500 text-sm mt-2">Selecione <b>Sede, Série e Turma</b>.</p>
+        </div>`;
         return; 
     }
 
     // 1. Filtra a lista base de alunos daquela Turma
     let listaBase = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
     
-    // 2. Vincula aos Grupos/Lados do Laboratório Atual
+    // 2. Vincula aos Grupos/Lados do Laboratório Atual (Maker ou Ciências)
     const listaComVinculo = listaBase.map(aluno => {
         const vinculo = allAssignments.find(a => 
             a.ra_aluno === aluno.ra && 
@@ -818,40 +816,56 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         return { ...aluno, currentLado: vinculo.lado, currentGrupo: vinculo.grupo };
     });
 
-    // 3. Filtro Rígido de Lado (Indispensável para separar A de B)
-    let listaFiltrada = listaComVinculo.filter(s => s.currentLado === lado);
+    // 3. FILTRO DE LADO (Ajustado para Lab de Ciências)
+    // Se for Ciências e o Lado for "Todos", permitimos ver alunos sem lado (null)
+    let listaFiltrada;
+    if (lado === 'todos') {
+        listaFiltrada = listaComVinculo;
+    } else {
+        listaFiltrada = listaComVinculo.filter(s => s.currentLado === lado);
+    }
     
     // Filtro opcional de Grupo
     if (grupoSel !== 'todos') {
         listaFiltrada = listaFiltrada.filter(s => String(s.currentGrupo) === grupoSel);
     }
 
-    // Validação de lista vazia após os filtros
     if (listaFiltrada.length === 0) {
-        cont.innerHTML = `
-            <div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
-                <p class="text-slate-500 italic text-sm">Nenhum aluno encontrado no <b>Lado ${lado}</b> para esta configuração.</p>
-            </div>`;
+        cont.innerHTML = `<div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+            <p class="text-slate-500 italic text-sm">Nenhum aluno/grupo localizado nesta configuração.</p>
+        </div>`;
         return;
     }
 
-    // 4. Renderização (Individual ou Grupo)
+    // 4. RENDERIZAÇÃO
     if (serie.includes("6")) {
+        // CORREÇÃO 6º ANO: Renderiza individualmente
         cont.innerHTML = listaFiltrada
             .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
-            .map(aluno => renderEvalCard(aluno.nome_aluno, aluno.ra, aluno.currentGrupo))
+            .map(aluno => {
+                // Se o aluno não tiver grupo em Ciências, mostramos "Sem Grupo" no card
+                const infoGrupo = aluno.currentGrupo ? `Grupo ${aluno.currentGrupo}` : 'Sem Grupo';
+                const labelLado = aluno.currentLado ? `Lado ${aluno.currentLado}` : 'S/L';
+                return renderEvalCard(`${aluno.nome_aluno}`, aluno.ra, aluno.currentGrupo, `${labelLado} | ${infoGrupo}`);
+            })
             .join('');
     } else {
-        const gruposNoLado = [...new Set(listaFiltrada.map(s => s.currentGrupo))].filter(g => g).sort((a, b) => a - b);
+        // RENDERIZAÇÃO EM GRUPOS (7º e 8º)
+        const gruposNoFiltro = [...new Set(listaFiltrada.map(s => s.currentGrupo))].filter(g => g).sort((a, b) => a - b);
         
-        cont.innerHTML = gruposNoLado.map(g => {
+        if (gruposNoFiltro.length === 0 && currentLab === 'ciencias') {
+             cont.innerHTML = `<p class="col-span-full text-center py-10 text-slate-500 italic">Aguardando atribuição de grupos em Ciências...</p>`;
+             return;
+        }
+
+        cont.innerHTML = gruposNoFiltro.map(g => {
             const integrantes = listaFiltrada
                 .filter(s => s.currentGrupo === g)
                 .map(s => s.nome_aluno)
                 .join(', ');
 
-            // Título do card agora é ultra-específico
-            return renderEvalCard(`LADO ${lado} - GRUPO ${g}`, null, g, integrantes);
+            const exLado = listaFiltrada.find(s => s.currentGrupo === g)?.currentLado || '?';
+            return renderEvalCard(`LADO ${exLado} - GRUPO ${g}`, null, g, integrantes);
         }).join('');
     }
     
@@ -1805,55 +1819,50 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
       reader.readAsArrayBuffer(file);
     }
 
-    async function handleStudentSubmit(e) {
+   async function handleStudentSubmit(e) {
     e.preventDefault();
-    showToast("Processando atualização...", "info");
+    showToast("Sincronizando...", "info");
 
     const ra = document.getElementById('m-ra').value;
     const isMaker = (currentLab === 'maker');
 
-    // 1. DADOS FIXOS (Tabela 'students')
-    // Só tentamos atualizar se for o ADMIN MAKER logado
-    if (isMaker) {
-        const studentData = {
-            nome_aluno: document.getElementById('m-nome').value,
-            ra: ra,
-            sede: document.getElementById('m-sede').value,
-            serie: document.getElementById('m-serie').value,
-            nome_turma: document.getElementById('m-turma').value,
-            usuario: currentUser
+    try {
+        // 1. ATUALIZAÇÃO CADASTRAL (Apenas se for Maker)
+        if (isMaker) {
+            const studentData = {
+                nome_aluno: document.getElementById('m-nome').value,
+                ra: ra,
+                sede: document.getElementById('m-sede').value,
+                serie: document.getElementById('m-serie').value,
+                nome_turma: document.getElementById('m-turma').value,
+                usuario: currentUser
+            };
+
+            const { error: errS } = await _supabase.from('students').upsert(studentData, { onConflict: 'ra' });
+            if (errS) throw new Error("Erro no cadastro: " + errS.message);
+        }
+
+        // 2. ATUALIZAÇÃO DO LABORATÓRIO (Lado e Grupo - Funciona para AMBOS)
+        const assignmentData = {
+            ra_aluno: ra,
+            disciplina: currentLab,
+            lado: document.getElementById('m-parte').value || null,
+            grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
         };
 
-        const { error: errorStudent } = await _supabase
-            .from('students')
-            .upsert(studentData, { onConflict: 'ra' });
+        const { error: errA } = await _supabase
+            .from('lab_assignments')
+            .upsert(assignmentData, { onConflict: 'ra_aluno,disciplina' });
 
-        if (errorStudent) {
-            console.error("Erro Students:", errorStudent);
-            return showToast("Erro nos dados do aluno", "error");
-        }
-    }
+        if (errA) throw new Error("Erro no vínculo: " + errA.message);
 
-    // 2. DADOS DO LABORATÓRIO (Tabela 'lab_assignments')
-    // Salva o Lado e Grupo específicos do lab atual (Maker ou Ciências)
-    const assignmentData = {
-        ra_aluno: ra,
-        disciplina: currentLab,
-        lado: document.getElementById('m-parte').value || null,
-        grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
-    };
-
-    const { error: errorAssign } = await _supabase
-        .from('lab_assignments')
-        .upsert(assignmentData, { onConflict: 'ra_aluno,disciplina' });
-
-    if (errorAssign) {
-        console.error("Erro Assignment:", errorAssign);
-        showToast("Erro ao salvar Grupo/Lado", "error");
-    } else {
-        showToast("Dados salvos com sucesso!", "success");
+        showToast(`Dados salvos em ${currentLab.toUpperCase()}!`, "success");
         closeStudentModal();
-        await refreshData(); // Recarrega tudo para atualizar as listas e o allAssignments
+        await refreshData();
+
+    } catch (err) {
+        console.error(err);
+        showToast(err.message, "error");
     }
 }
 
@@ -2093,57 +2102,57 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
         </table>`;
 }
 
-       function openEditModal(ra) {
-    // 1. Localiza os dados fixos do aluno
+     function openEditModal(ra) {
+    // 1. Localiza os dados fixos do aluno na lista global
     const s = allStudents.find(x => x.ra === ra);
     if (!s) return showToast("Aluno não encontrado", "error");
 
-    // 2. Localiza os dados específicos do laboratório atual (Maker ou Ciências)
+    // 2. Busca o vínculo específico do laboratório atual (Maker ou Ciências)
     const assign = allAssignments.find(a => 
         a.ra_aluno === ra && 
         a.disciplina === currentLab
     ) || { lado: null, grupo: null };
 
-    // 3. Atualiza o título do Modal com o contexto atual
+    // 3. Atualiza o título do Modal conforme o contexto
     document.getElementById('modal-title').innerText = `Editar Aluno (${currentLab.toUpperCase()})`;
     
-    // 4. Preenche os Dropdowns (Sede, Série, Turma)
+    // 4. Preenche os dropdowns de Sede/Série/Turma com os dados do aluno
     populateModalDropdowns(s);
     
-    // 5. Preenche os campos do formulário
+    // 5. Preenche os campos de texto e selects do formulário
     document.getElementById('m-nome').value = s.nome_aluno;
     document.getElementById('m-ra').value = s.ra;
     document.getElementById('m-parte').value = assign.lado || '';
     document.getElementById('m-grupo').value = assign.grupo || '';
 
-    // 6. TRAVA DE SEGURANÇA (A essência do Passo 3.3)
-    // Se o laboratório logado for 'ciencias', bloqueamos os campos fixos
-    const isReadOnly = (currentLab === 'ciencias');
+    // --- 6. LÓGICA DE PERMISSÕES (TRAVA DE SEGURANÇA) ---
+    const isCiencias = (currentLab === 'ciencias');
 
-    document.getElementById('m-nome').disabled = isReadOnly;
-    document.getElementById('m-ra').disabled = isReadOnly;
-    document.getElementById('m-sede').disabled = isReadOnly;
-    document.getElementById('m-serie').disabled = isReadOnly;
-    document.getElementById('m-turma').disabled = isReadOnly;
-
-         document.getElementById('m-parte').disabled = false; 
-    document.getElementById('m-grupo').disabled = false;
-
-    // Adiciona um estilo visual de "bloqueado" para os campos desativados
-    const fixedFields = ['m-nome', 'm-ra', 'm-sede', 'm-serie', 'm-turma'];
-    fixedFields.forEach(id => {
+    // Campos Cadastrais: Bloqueados se for Ciências, Liberados se for Maker
+    const camposFixos = ['m-nome', 'm-ra', 'm-sede', 'm-serie', 'm-turma'];
+    camposFixos.forEach(id => {
         const el = document.getElementById(id);
-        if (isReadOnly) {
-            el.classList.add('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
-        } else {
+        if (el) {
+            el.disabled = isCiencias;
+            if (isCiencias) {
+                el.classList.add('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+            } else {
+                el.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+            }
+        }
+    });
+
+    // Campos de Atribuição (Lado e Grupo): SEMPRE LIBERADOS para ambos os labs
+    const camposLab = ['m-parte', 'm-grupo'];
+    camposLab.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.disabled = false; // Garante que Lado A/B esteja disponível
             el.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
         }
     });
 
-         document.getElementById('m-parte').classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
-    document.getElementById('m-grupo').classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
-
-    // 7. Mostra o Modal
+    // 7. Exibe o modal na tela
     document.getElementById('student-modal').classList.remove('hidden');
 }
 
