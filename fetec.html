@@ -593,8 +593,8 @@ async function generateRanking() {
                 };
             }
             
-            // Média das 5 notas deste avaliador específico
-            const mediaDesteAvaliador = (e.nota_oralidade + e.nota_postura + e.nota_clareza + e.nota_dominio + e.nota_transmissao) / 5;
+            // Média das 3 notas deste avaliador específico
+            const mediaDesteAvaliador = (notaO + notaP + notaD) / 3;
             processado[key].avaliacoes.push(mediaDesteAvaliador);
             
             // Regra de Aptidão: Se um jurado achar apto, o projeto sobe para a lista FETEC
@@ -881,9 +881,11 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
 
     function renderEvalCard(titulo, ra, grupo, membros = "") {
     const id = ra || `g${grupo}`;
-    const categorias = [
-        { label: 'Apresentação', subs: ['Oralidade', 'Postura', 'Clareza'] },
-        { label: 'Conteúdo', subs: ['Dominio', 'Transmissao'] }
+    // Definimos os 3 novos critérios
+    const criterios = [
+        { id: 'Oralidade', label: 'Oralidade' },
+        { id: 'Postura', label: 'Postura' },
+        { id: 'Dominio', label: 'Domínio e Transmissão' }
     ];
 
     return `
@@ -901,27 +903,22 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
                 ${membros ? `<p class="text-slate-500 text-[11px] mt-1 italic leading-tight">${membros}</p>` : ''}
             </div>
             
-            <div class="space-y-4">
-                ${categorias.map(cat => `
-                    <div class="space-y-2">
-                        <p class="text-emerald-400 text-[10px] uppercase font-black tracking-widest">${cat.label}</p>
-                        ${cat.subs.map(sub => `
-                            <div class="flex justify-between items-center bg-slate-800/40 p-2 rounded-lg border border-slate-700/50">
-                                <label class="text-slate-300 text-xs">${sub.replace('ao', 'ão')}</label>
-                                <input type="number" 
-                                    id="nota-${id}-${sub}" 
-                                    step="0.1" min="0" max="10" 
-                                    placeholder="0.0" 
-                                    oninput="calculateLiveMedia('${id}')" 
-                                    class="eval-input-${id} w-16 bg-slate-950 border border-slate-600 rounded text-center text-emerald-400 font-bold text-sm p-1 outline-none focus:border-emerald-500">
-                            </div>
-                        `).join('')}
+            <div class="space-y-3">
+                ${criterios.map(c => `
+                    <div class="flex justify-between items-center bg-slate-800/40 p-3 rounded-lg border border-slate-700/50">
+                        <label class="text-slate-300 text-xs font-medium">${c.label}</label>
+                        <input type="number" 
+                            id="nota-${id}-${c.id}" 
+                            step="0.1" min="0" max="10" 
+                            placeholder="0.0" 
+                            oninput="calculateLiveMedia('${id}')" 
+                            class="eval-input-${id} w-20 bg-slate-950 border border-slate-600 rounded-lg text-center text-emerald-400 font-black text-lg p-2 outline-none focus:border-emerald-500">
                     </div>
                 `).join('')}
             </div>
 
             <div class="mt-5 space-y-3">
-                <textarea id="obs-${id}" placeholder="Observações e feedback..." 
+                <textarea id="obs-${id}" placeholder="Observações e feedback pedagógico..." 
                     class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white text-xs h-20 outline-none focus:border-blue-500 resize-none"></textarea>
                 
                 <div class="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700">
@@ -930,7 +927,7 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
                 </div>
 
                 <button onclick="saveFetecEval('${ra}', '${grupo}', '${id}')" 
-                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-900/20 text-sm">
+                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-900/20 text-sm uppercase tracking-widest">
                     💾 Salvar Avaliação
                 </button>
             </div>
@@ -995,9 +992,9 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         
         nota_oralidade: getNotaLimpa('Oralidade'),
         nota_postura: getNotaLimpa('Postura'),
-        nota_clareza: getNotaLimpa('Clareza'),
-        nota_dominio: getNotaLimpa('Dominio'),
-        nota_transmissao: getNotaLimpa('Transmissao'),
+        nota_dominio: getNotaLimpa('Dominio'), // Unificamos aqui
+        nota_clareza: 0, // Zera as colunas antigas para não bugar
+        nota_transmissao: 0,
         
         observacao: document.getElementById(`obs-${cardId}`).value,
         apto_fetec: document.getElementById(`apto-${cardId}`).checked,
@@ -1222,7 +1219,7 @@ function loadPersistentEvalFilters() {
             display.innerText = "!!";
             display.className = "text-xl font-black text-red-500 animate-bounce";
         } else {
-            const media = preenchidos > 0 ? (soma / 5) : 0;
+            const media = preenchidos > 0 ? (soma / 3) : 0;
             display.innerText = media.toFixed(1);
             
             // Cores baseadas na média
