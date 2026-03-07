@@ -520,11 +520,11 @@ async function generateRanking() {
     container.innerHTML = `
         <div class="text-center py-20">
             <div class="loader-spinner mx-auto mb-4"></div>
-            <p class="text-slate-500 italic">Consolidando notas filtradas...</p>
+            <p class="text-slate-500 italic">Consolidando resultados filtrados...</p>
         </div>`;
 
     try {
-        // 1. Busca TODAS as avaliações da série/sede para o lab atual
+        // 1. Busca avaliações base do banco
         let { data: evals, error } = await _supabase
             .from('evaluations_fetec')
             .select('*')
@@ -533,14 +533,12 @@ async function generateRanking() {
             .eq('disciplina', currentLab);
 
         if (error) throw error;
-
         if (!evals || evals.length === 0) {
-            container.innerHTML = `<p class="text-center py-20 text-slate-500">Nenhuma avaliação encontrada.</p>`;
+            container.innerHTML = `<p class="text-center py-20 text-slate-500 italic">Nenhuma avaliação encontrada para esta sede/série.</p>`;
             return;
         }
 
-        // --- FILTRO DE SEGURANÇA (O PONTO CHAVE) ---
-        // Aqui filtramos as avaliações para manter apenas o Lado selecionado no filtro da tela
+        // --- FILTRO DE SEGURANÇA: Respeita o Lado selecionado na tela ---
         if (ladoFiltro !== 'todos') {
             evals = evals.filter(e => e.lado === ladoFiltro);
         }
@@ -548,7 +546,7 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-            // Chave única para agrupar notas de diferentes jurados para o mesmo alvo
+            // A chave agora inclui a TURMA para não misturar alunos de salas diferentes no ranking
             const key = e.ra_aluno ? e.ra_aluno : `${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
             if (!processado[key]) {
@@ -558,20 +556,21 @@ async function generateRanking() {
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca os nomes dos integrantes reais para não mostrar uma lista genérica
+                    // Busca integrantes específicos deste grupo/lado/turma
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
 
                     const integrantes = allStudents
-                        .filter(s => rasNoGrupo.includes(s.ra))
+                        .filter(s => rasNoGrupo.includes(s.ra) && s.nome_turma === e.nome_turma)
                         .map(s => s.nome_aluno)
+                        .sort()
                         .join(', ');
                     
                     identificacao = `
                         <div class="flex flex-col">
                             <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado} - Grupo ${e.grupo}</span>
-                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Sem integrantes listados'}</span>
+                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Alunos não vinculados'}</span>
                         </div>`;
                 }
 
@@ -584,23 +583,23 @@ async function generateRanking() {
                 };
             }
             
+            // Soma as 3 notas e divide por 3
             const n1 = parseFloat(e.nota_oralidade) || 0;
             const n2 = parseFloat(e.nota_postura) || 0;
             const n3 = parseFloat(e.nota_dominio) || 0; 
             
-            const mediaDesteAvaliador = (n1 + n2 + n3) / 3;
-            processado[key].avaliacoes.push(mediaDesteAvaliador);
+            processado[key].avaliacoes.push((n1 + n2 + n3) / 3);
             if (e.apto_fetec) processado[key].apto = true;
         });
 
-        // 2. Calcula a média final das médias dos jurados
+        // 2. Calcula média final e ordena
         const rankingFinal = Object.values(processado).map(obj => {
             const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
             obj.mediaFinal = soma / obj.avaliacoes.length;
             return obj;
         }).sort((a, b) => b.mediaFinal - a.mediaFinal);
 
-        // 3. Renderiza apenas os grupos que restaram após o filtro
+        // 3. Renderiza as tabelas separadas
         const listaAptos = rankingFinal.filter(r => r.apto === true);
         const listaGeral = rankingFinal.filter(r => r.apto !== true);
 
@@ -608,7 +607,7 @@ async function generateRanking() {
         if (listaAptos.length > 0) htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC`, "border-amber-500/30 bg-amber-500/5", "text-amber-400");
         if (listaGeral.length > 0) htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
 
-        container.innerHTML = htmlFinal || `<p class="text-center py-20 text-slate-500">Nenhum resultado para os filtros atuais.</p>`;
+        container.innerHTML = htmlFinal || `<p class="text-center py-20 text-slate-500 italic">Nenhum aluno/grupo restou após os filtros.</p>`;
 
     } catch (err) {
         console.error("Erro no Ranking:", err);
@@ -619,33 +618,33 @@ async function generateRanking() {
 // Função auxiliar para gerar o HTML das tabelas (mantém o código limpo)
 function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     return `
-        <div class="rounded-2xl border ${bordaEstilo} p-6 mb-8 shadow-2xl">
-            <h3 class="${textoEstilo} font-black text-xs uppercase tracking-widest mb-4 flex justify-between">
+        <div class="rounded-2xl border ${bordaEstilo} p-5 mb-8 shadow-2xl overflow-hidden">
+            <h3 class="${textoEstilo} font-black text-[10px] uppercase tracking-[0.2em] mb-4 flex justify-between items-center">
                 <span>${titulo}</span>
-                <span class="opacity-50 text-[10px]">${dados.length} registros</span>
+                <span class="opacity-40">${dados.length} itens</span>
             </h3>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs">
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left text-xs border-collapse">
                     <thead>
                         <tr class="text-slate-500 border-b border-slate-800">
-                            <th class="p-3 w-12 text-center">Pos.</th>
-                            <th class="p-3">Equipe / Aluno (Clique para detalhes)</th>
-                            <th class="p-3">Turma</th>
-                            <th class="p-3 text-right">Média Final</th>
+                            <th class="p-3 w-10 text-center">#</th>
+                            <th class="p-3">Equipe / Aluno</th>
+                            <th class="p-3 text-center">Turma</th>
+                            <th class="p-3 text-right">Média</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody class="divide-y divide-slate-800/50">
                         ${dados.map((r, idx) => `
-                            <tr class="border-b border-slate-800/40 hover:bg-white/5 transition-colors">
-                                <td class="p-2 text-center font-mono text-slate-500">${idx + 1}º</td>
-                                <td class="p-2">
-                                    <button onclick="showEvaluationLog('${r.key}')" class="text-left hover:text-blue-400 transition-colors group">
-                                        <span class="font-bold text-white uppercase block">${r.nome}</span>
-                                        <span class="text-[9px] text-blue-500 opacity-0 group-hover:opacity-100">🔍 Ver histórico de notas</span>
+                            <tr class="hover:bg-white/5 transition-colors">
+                                <td class="p-3 text-center font-mono opacity-40">${idx + 1}º</td>
+                                <td class="p-3">
+                                    <button onclick="showEvaluationLog('${r.key}')" class="text-left group block">
+                                        <div class="font-bold text-white uppercase group-hover:text-blue-400 transition-colors">${r.nome}</div>
+                                        <div class="text-[9px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Clique para ver notas dos jurados</div>
                                     </button>
                                 </td>
-                                <td class="p-2 text-slate-400 italic">${r.turma}</td>
-                                <td class="p-2 text-right font-black text-sm ${textoEstilo}">${r.mediaFinal.toFixed(2)}</td>
+                                <td class="p-3 text-center text-slate-400 italic font-medium">${r.turma}</td>
+                                <td class="p-3 text-right font-black text-sm ${textoEstilo}">${r.mediaFinal.toFixed(2)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
