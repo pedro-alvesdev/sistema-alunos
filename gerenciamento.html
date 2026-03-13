@@ -176,6 +176,7 @@ td {
     let allAssignments = [];  // Guardará os dados da nova tabela 'lab_assignments'
     let allProfessors = [];
 let selectedProfessorId = null;
+    let agendaCurrentDate = new Date(); // Controla qual semana estamos vendo
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -548,8 +549,8 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-            // A chave agora inclui a TURMA para não misturar alunos de salas diferentes no ranking
-            const key = e.ra_aluno ? e.ra_aluno : `${e.nome_turma}-${e.lado}-G${e.grupo}`;
+            // A chave agora inclui a SEDE para ser única de verdade
+            const key = e.ra_aluno ? e.ra_aluno : `${e.sede}-${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
             if (!processado[key]) {
                 let identificacao = "";
@@ -558,13 +559,13 @@ async function generateRanking() {
                     const aluno = allStudents.find(s => s.ra === e.ra_aluno);
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca integrantes específicos deste grupo/lado/turma
+                    // CORREÇÃO: Adicionado filtro de sede para buscar integrantes
                     const rasNoGrupo = allAssignments
                         .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
                         .map(a => a.ra_aluno);
 
                     const integrantes = allStudents
-                        .filter(s => rasNoGrupo.includes(s.ra) && s.nome_turma === e.nome_turma)
+                        .filter(s => rasNoGrupo.includes(s.ra) && s.nome_turma === e.nome_turma && s.sede === e.sede)
                         .map(s => s.nome_aluno)
                         .sort()
                         .join(', ');
@@ -584,6 +585,7 @@ async function generateRanking() {
                     apto: false 
                 };
             }
+            
             
             // Soma as 3 notas e divide por 3
             const n1 = parseFloat(e.nota_oralidade) || 0;
@@ -615,6 +617,24 @@ async function generateRanking() {
         console.error("Erro no Ranking:", err);
         showToast("Erro ao processar ranking", "error");
     }
+}
+
+
+    async function deleteSchedule(id) {
+    if (!confirm("Deseja remover esta aula da sua rotina?")) return;
+
+    const { error } = await _supabase
+        .from('maker_schedules')
+        .delete()
+        .eq('id', id);
+
+    if (error) {
+        showToast("Erro ao excluir aula", "error");
+    } else {
+        showToast("Aula removida!", "success");
+        loadProfessorSchedule();
+    }
+      renderWeeklyAgenda();
 }
 
     async function loadProfessors() {
@@ -812,9 +832,90 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     updateFilterOptions('management');
     renderStudentList();
 }
+    async function renderWeeklyAgenda() {
+    if (!selectedProfessorId) return;
 
-    function openAgendaModal() {
-    // Cria o fundo do modal se não existir
+    const container = document.getElementById('weekly-agenda-view');
+    if (!container) return;
+
+    // 1. Busca dados necessários
+    const { data: schedules } = await _supabase.from('maker_schedules').select('*').eq('professor_id', selectedProfessorId);
+    const { data: exceptions } = await _supabase.from('maker_exceptions').select('*')
+        .or(`is_global.eq.true,professor_id.eq.${selectedProfessorId}`);
+
+    // 2. Calcula os dias da semana atual (Segunda a Sexta)
+    const current = new Date(agendaCurrentDate);
+    const day = current.getDay();
+    const diff = current.getDate() - day + (day === 0 ? -6 : 1); // Ajusta para segunda
+    const monday = new Date(current.setDate(diff));
+
+    let html = `
+        <div class="flex justify-between items-center mb-4">
+            <h4 class="text-white font-bold text-sm uppercase tracking-wider">🗓️ Agenda: ${monday.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'})}</h4>
+            <div class="flex gap-2">
+                <button onclick="changeAgendaWeek(-7)" class="p-1 px-3 bg-slate-800 text-white rounded hover:bg-slate-700 text-xs">< Anterior</button>
+                <button onclick="changeAgendaWeek(7)" class="p-1 px-3 bg-slate-800 text-white rounded hover:bg-slate-700 text-xs">Próxima ></button>
+            </div>
+        </div>
+        <div class="grid grid-cols-5 gap-2">`;
+
+    const diasNome = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
+
+    for (let i = 0; i < 5; i++) {
+        const targetDate = new Date(monday);
+        targetDate.setDate(monday.getDate() + i);
+        const dStr = targetDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+        
+        html += `
+            <div class="space-y-2">
+                <div class="text-center p-2 bg-slate-900 rounded-lg border border-slate-800">
+                    <p class="text-[9px] text-slate-500 uppercase font-black">${diasNome[i]}</p>
+                    <p class="text-xs text-white font-bold">${dStr}</p>
+                </div>
+                <div class="space-y-2 min-h-[150px]">`;
+
+        // Filtra aulas do banco que caem neste dia da semana (1-5)
+        const dayClasses = (schedules || []).filter(s => s.day_of_week === (i + 1))
+            .sort((a, b) => a.class_time.localeCompare(b.class_time));
+
+        dayClasses.forEach(cls => {
+            // Verifica se este dia específico é uma exceção
+           const targetDateStr = targetDate.toISOString().split('T')[0];
+            const isException = exceptions?.find(ex => ex.exception_date === targetDateStr);
+            
+            if (isException) {
+                html += `
+                    <div class="p-2 bg-red-900/20 border border-red-900/40 rounded-lg text-center">
+                        <p class="text-[9px] text-red-400 font-bold uppercase">Sem Aula</p>
+                        <p class="text-[8px] text-red-300/60 italic">${isException.description || 'Pausa'}</p>
+                    </div>`;
+            } else {
+                // USA O CÁLCULO DO PASSO 5
+                const side = calculateClassSide(cls, exceptions || [], targetDate);
+                const colorClass = side === 'A' ? 'bg-blue-600 border-blue-400' : 'bg-purple-600 border-purple-400';
+                
+                html += `
+                    <div class="p-2 ${colorClass} border-l-4 rounded-md shadow-lg">
+                        <p class="text-[10px] text-white font-bold leading-tight">${cls.class_name}</p>
+                        <p class="text-[9px] text-white/80">${cls.class_time.substring(0,5)}</p>
+                        <div class="mt-1 bg-black/20 rounded text-[8px] text-white font-black px-1 w-fit uppercase">Lado ${side}</div>
+                    </div>`;
+            }
+        });
+
+        html += `</div></div>`;
+    }
+
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+    function changeAgendaWeek(days) {
+    agendaCurrentDate.setDate(agendaCurrentDate.getDate() + days);
+    renderWeeklyAgenda();
+}
+
+   function openAgendaModal() {
     let modal = document.getElementById('agenda-modal');
     if (!modal) {
         modal = document.createElement('div');
@@ -825,77 +926,280 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     modal.classList.remove('hidden');
 
     modal.innerHTML = `
-        <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
             <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
                 <div>
                     <h3 class="text-xl font-black text-white uppercase tracking-tight">Organizador de Aulas Maker</h3>
-                    <p class="text-xs text-slate-400 italic">Gestão de Lado A/B e Calendário</p>
+                    <p class="text-xs text-slate-400 italic">Gestão de Lado A/B e Calendário Escolar</p>
                 </div>
-                <button onclick="document.getElementById('agenda-modal').classList.add('hidden')" class="text-slate-400 hover:text-white">✕ Fechar</button>
+                <button onclick="document.getElementById('agenda-modal').classList.add('hidden')" class="text-slate-400 hover:text-white p-2">✕ Fechar</button>
             </div>
 
             <div class="p-6 bg-slate-950 border-b border-slate-800 flex flex-wrap gap-4 items-end">
-                <div class="flex-1 min-w-[200px]">
+                <div class="flex-1 min-w-[250px]">
                     <label class="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Professor Responsável</label>
                     <div class="flex gap-2">
-                        <select id="prof-select" onchange="selectedProfessorId = this.value" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-sm outline-none focus:border-blue-500">
-                            <option value="">Carregando...</option>
+                        <select id="prof-select" onchange="selectedProfessorId = this.value; loadProfessorSchedule();" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-sm outline-none focus:border-blue-500">
+                            <option value="">Selecione um Professor</option>
                         </select>
-                        <button onclick="registerProfessor()" class="bg-slate-800 hover:bg-slate-700 text-blue-400 p-2.5 rounded-lg border border-slate-700 w-11 font-bold" title="Cadastrar novo professor">+</button>
+                        <button onclick="registerProfessor()" class="bg-slate-800 hover:bg-slate-700 text-blue-400 p-2.5 rounded-lg border border-slate-700 w-11 font-bold">+</button>
                     </div>
                 </div>
-                </div>
-
-            // ... dentro do modal.innerHTML
-<div id="agenda-content" class="p-6 overflow-y-auto flex-1 bg-slate-900/50">
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 h-fit">
-            <h4 class="text-white font-bold text-sm mb-4 uppercase tracking-wider">➕ Adicionar Aula à Rotina</h4>
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] text-slate-500 uppercase font-bold">Dia da Semana</label>
-                    <select id="sched-day" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
-                        <option value="1">Segunda-feira</option>
-                        <option value="2">Terça-feira</option>
-                        <option value="3">Quarta-feira</option>
-                        <option value="4">Quinta-feira</option>
-                        <option value="5">Sexta-feira</option>
-                    </select>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-[10px] text-slate-500 uppercase font-bold">Horário</label>
-                        <input type="time" id="sched-time" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
-                    </div>
-                    <div>
-                        <label class="text-[10px] text-slate-500 uppercase font-bold">Turma</label>
-                        <input type="text" id="sched-name" placeholder="Ex: 7ºA" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
-                    </div>
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-500 uppercase font-bold">Lado de Início (Semana 1)</label>
-                    <select id="sched-side" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
-                        <option value="A">Lado A</option>
-                        <option value="B">Lado B</option>
-                    </select>
-                </div>
-                <button onclick="saveSchedule()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg text-xs uppercase tracking-widest">
-                    💾 Salvar Aula
-                </button>
             </div>
-        </div>
 
-        <div class="lg:col-span-2 bg-slate-800/30 rounded-2xl border border-slate-800 p-5">
-            <h4 class="text-white font-bold text-sm mb-4 uppercase tracking-wider">📋 Minha Grade Fixa</h4>
-            <div id="schedule-list" class="space-y-2">
-                <p class="text-slate-600 text-xs italic">Nenhuma aula cadastrada para este professor.</p>
+            <div id="agenda-content" class="p-6 overflow-y-auto flex-1 bg-slate-900/50 custom-scrollbar">
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    
+                    <div class="lg:col-span-1 space-y-6">
+                        
+                        <div class="bg-slate-800/50 p-5 rounded-2xl border border-slate-700">
+                            <h4 class="text-white font-bold text-[11px] mb-4 uppercase tracking-widest text-blue-400">➕ Nova Aula na Rotina</h4>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold">Dia</label>
+                                    <select id="sched-day" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                        <option value="1">Segunda</option>
+                                        <option value="2">Terça</option>
+                                        <option value="3">Quarta</option>
+                                        <option value="4">Quinta</option>
+                                        <option value="5">Sexta</option>
+                                    </select>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="text-[9px] text-slate-500 uppercase font-bold">Horário</label>
+                                        <input type="time" id="sched-time" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                    </div>
+                                    <div>
+                                        <label class="text-[9px] text-slate-500 uppercase font-bold">Início</label>
+                                        <select id="sched-side" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                            <option value="A">Lado A</option>
+                                            <option value="B">Lado B</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 gap-2">
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold">Série / Turma</label>
+                                    <div class="flex gap-1">
+                                        <select id="sched-serie" onchange="updateAgendaTurmas()" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-[10px]">
+                                            <option value="">Série...</option>
+                                        </select>
+                                        <select id="sched-turma" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-[10px]">
+                                            <option value="">Turma...</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button onclick="saveSchedule()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl transition-all text-[10px] uppercase tracking-widest">
+                                    💾 Salvar Aula
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 h-fit mt-6">
+                            <h4 class="text-white font-bold text-[11px] mb-4 uppercase tracking-widest text-emerald-400">🚫 Marcar Dia Sem Aula</h4>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold">Data do Evento</label>
+                                    <input type="date" id="exc-date" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                </div>
+                                <div>
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold">Tipo de Exceção</label>
+                                    <select id="exc-type" onchange="toggleExcTarget()" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                        <option value="global">Feriado/Recesso (Todos)</option>
+                                        <option value="individual">Prova/Evento (Apenas minha aula)</option>
+                                    </select>
+                                </div>
+                                <div id="exc-description-cont">
+                                    <label class="text-[9px] text-slate-500 uppercase font-bold">Descrição (Opcional)</label>
+                                    <input type="text" id="exc-desc" placeholder="Ex: Feriado de Páscoa" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-xs">
+                                </div>
+                                <button onclick="saveException()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl transition-all shadow-lg text-[10px] uppercase tracking-widest">
+                                    🚫 Confirmar Pausa
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-3 space-y-6">
+                        <div class="bg-slate-800/30 rounded-2xl border border-slate-800 p-5">
+                            <h4 class="text-white font-bold text-sm mb-4 uppercase tracking-wider">📋 Minha Grade Fixa</h4>
+                            <div id="schedule-list" class="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                <p class="text-slate-600 text-xs italic">Nenhuma aula cadastrada.</p>
+                            </div>
+                        </div>
+                        
+                        <div id="weekly-agenda-view" class="bg-slate-800/30 rounded-2xl border border-slate-800 p-5 min-h-[300px]">
+                            <h4 class="text-white font-bold text-sm mb-4 uppercase tracking-wider">🗓️ Agenda da Semana</h4>
+                            <div class="text-center py-10 text-slate-600 text-xs italic">
+                                A visualização semanal será gerada após o cadastro dos horários.
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-</div>`;
+        </div>`;
 
-    // Carrega os professores assim que abrir o modal
+    // Inicializadores
     loadProfessors();
+    populateAgendaSeries();
+}
+
+    function toggleExcTarget() {
+    const type = document.getElementById('exc-type').value;
+    const descCont = document.getElementById('exc-description-cont');
+    
+    if (type === 'individual') {
+        // Feedback visual opcional: destaca que é para o professor selecionado
+        descCont.classList.add('border-l-2', 'border-emerald-500', 'pl-2');
+    } else {
+        descCont.classList.remove('border-l-2', 'border-emerald-500', 'pl-2');
+    }
+}
+
+   async function saveException() {
+    const dateInput = document.getElementById('exc-date');
+    const typeInput = document.getElementById('exc-type');
+    const descInput = document.getElementById('exc-desc');
+
+    const date = dateInput.value;
+    const type = typeInput.value;
+    const desc = descInput.value.trim();
+
+    // Validação básica
+    if (!date) {
+        showToast("Selecione a data da exceção!", "error");
+        return;
+    }
+
+    // Se for individual, precisa obrigatoriamente de um professor selecionado
+    if (type === 'individual' && !selectedProfessorId) {
+        showToast("Selecione um professor para marcar uma exceção individual!", "error");
+        return;
+    }
+
+    const payload = {
+        exception_date: date,
+        description: desc || (type === 'global' ? "Feriado/Recesso" : "Evento Individual"),
+        is_global: (type === 'global'),
+        // Se for global, o professor_id fica nulo no banco
+        professor_id: (type === 'global') ? null : selectedProfessorId
+    };
+
+    const { error } = await _supabase
+        .from('maker_exceptions')
+        .insert([payload]);
+
+    if (error) {
+        console.error("Erro ao salvar exceção:", error);
+        showToast("Erro ao registrar no calendário", "error");
+    } else {
+        showToast("Calendário atualizado com sucesso!", "success");
+        
+        // Limpa os campos após salvar
+        dateInput.value = '';
+        descInput.value = '';
+        
+        // Recarrega a agenda visual (será implementado no Passo 6)
+        if (typeof renderWeeklyAgenda === "function") {
+            renderWeeklyAgenda();
+        }
+    }
+     renderWeeklyAgenda();
+}
+
+    /**
+ * Calcula qual o Lado (A ou B) de uma aula em uma data específica
+ * @param {Object} schedule - O objeto da aula vindo do banco (maker_schedules)
+ * @param {Array} exceptions - Lista de todas as exceções (maker_exceptions)
+ * @param {Date} targetDate - A data que queremos verificar
+ */
+function calculateClassSide(schedule, exceptions, targetDate) {
+    const startDate = new Date(schedule.start_date); // Ex: 2026-02-02
+    
+    // Zera as horas para comparar apenas os dias
+    const dStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const dTarget = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+
+    // Se a data consultada for antes do início das aulas, retorna nulo
+    if (dTarget < dStart) return null;
+
+    // 1. Calcula o número de semanas corridas
+    const diffInMs = dTarget - dStart;
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    const weeksPassed = Math.floor(diffInDays / 7);
+
+    // 2. Filtra exceções que ocorreram ANTES ou NA data alvo e que afetam esta aula
+    const relevantExceptions = exceptions.filter(ex => {
+        const exDate = new Date(ex.exception_date);
+        const dEx = new Date(exDate.getFullYear(), exDate.getMonth(), exDate.getDate());
+        
+        // A exceção deve ser antes da data alvo E (ser global OU ser deste professor)
+        const isBeforeOrEqual = dEx <= dTarget;
+        const affectsThis = ex.is_global || ex.professor_id === schedule.professor_id;
+        
+        // Importante: Só contamos exceções que caíram no MESMO dia da semana da aula
+        // Ex: Se a aula é na segunda, feriados de quarta não afetam o revezamento dela.
+        const isSameDayOfWeek = dEx.getDay() === schedule.day_of_week;
+
+        return isBeforeOrEqual && affectsThis && isSameDayOfWeek;
+    });
+
+    // 3. O número de semanas efetivas é (Semanas Corridas - Quantidade de Pausas)
+    const effectiveWeeks = weeksPassed - relevantExceptions.length;
+
+    // 4. Lógica de inversão
+    // Se effectiveWeeks for par (0, 2, 4...), o lado é o inicial.
+    // Se for ímpar (1, 3, 5...), o lado inverte.
+    const isOdd = effectiveWeeks % 2 !== 0;
+
+    if (schedule.start_side === 'A') {
+        return isOdd ? 'B' : 'A';
+    } else {
+        return isOdd ? 'A' : 'B';
+    }
+}
+
+    async function loadExceptions() {
+    const { data, error } = await _supabase
+        .from('maker_exceptions')
+        .select('*')
+        .or(`is_global.eq.true,professor_id.eq.${selectedProfessorId}`)
+        .order('exception_date', { ascending: true });
+
+    // Criaremos uma área na UI para listar isso se você achar necessário, 
+    // ou apenas usaremos esses dados para o cálculo do Passo 5.
+    return data || [];
+}
+
+async function deleteException(id) {
+    if (!confirm("Remover esta exceção e voltar ao cronograma normal?")) return;
+    const { error } = await _supabase.from('maker_exceptions').delete().eq('id', id);
+    if (!error) {
+        showToast("Calendário restaurado!", "success");
+        // Atualizar lista/agenda
+    }
+}
+
+
+    // Popula o dropdown de séries ao abrir o modal
+function populateAgendaSeries() {
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    const select = document.getElementById('sched-serie');
+    if (select) {
+        select.innerHTML = '<option value="">Série...</option>' + 
+            series.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+}
+
+// Atualiza as turmas conforme a série selecionada
+function updateAgendaTurmas() {
+    const serieSel = document.getElementById('sched-serie').value;
+    const turmas = [...new Set(allStudents.filter(s => s.serie === serieSel).map(s => s.nome_turma))].sort();
+    const select = document.getElementById('sched-turma');
+    if (select) {
+        select.innerHTML = '<option value="">Turma...</option>' + 
+            turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    }
 }
 
     async function saveSchedule() {
@@ -908,15 +1212,15 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         professor_id: selectedProfessorId,
         day_of_week: parseInt(document.getElementById('sched-day').value),
         class_time: document.getElementById('sched-time').value,
-        class_name: document.getElementById('sched-name').value.trim(),
+        class_name: document.getElementById('sched-name').value,
         start_side: document.getElementById('sched-side').value,
         start_date: '2026-02-02' // Data padrão de início do ano letivo
     };
 
-    if (!payload.class_time || !payload.class_name) {
-        showToast("Preencha todos os campos!", "error");
-        return;
-    }
+  if (!payload.class_time || !payload.class_name) {
+    showToast("Selecione a Série e a Turma!", "error");
+    return;
+}
 
     const { error } = await _supabase.from('maker_schedules').insert([payload]);
 
@@ -924,9 +1228,15 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         showToast("Erro ao salvar aula", "error");
     } else {
         showToast("Aula adicionada à rotina!", "success");
-        document.getElementById('sched-name').value = '';
+        document.getElementById('sched-serie').value = '';
+        document.getElementById('sched-turma').innerHTML = '<option value="">Turma...</option>';
+        document.getElementById('sched-time').value = '';
+        
+        await loadProfessorSchedule(); // Recarrega a lista
+        await renderWeeklyAgenda();    // Recarrega a grade visual
         loadProfessorSchedule(); // Função que criaremos a seguir
     }
+      renderWeeklyAgenda();
 }
 
     async function loadProfessorSchedule() {
@@ -962,6 +1272,7 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
             </div>
         </div>
     `).join('');
+      renderWeeklyAgenda();
 }
 
     function renderEvalCard(titulo, ra, grupo, membros = "") {
