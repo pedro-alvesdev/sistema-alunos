@@ -708,61 +708,107 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
    function renderManagementScreen() {
     const config = defaultConfig;
     const app = document.getElementById('app');
+    
+    // Define se o laboratório atual é Maker para aplicar cores e travas
     const isMaker = (currentLab === 'maker');
     
-    // Define a cor de fundo (Azul para Ciências, Slate para Maker)
+    // Ajuste de Cor de Fundo: Maker (Slate) vs Ciências (Azul Oceano)
     app.style.background = isMaker 
         ? `linear-gradient(135deg, ${config.background_color}, #1e293b)` 
-        : `linear-gradient(135deg, #0c4a6e, #0f172a)`;
+        : `linear-gradient(135deg, #0c4a6e, #0f172a)`; 
       
     app.innerHTML = `
         <div class="min-h-full p-4 md:p-8">
-          <div class="max-w-7xl mx-auto">
-            ${renderNavigationHeader()}
-            <div class="flex justify-end mb-4 no-print">
-              
-${isMaker ? `
-    <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-3 shadow-lg">
-        <button onclick="openAgendaModal()" class="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded-md transition-all flex items-center gap-2 text-[10px] font-bold uppercase">
-            📅 Agenda Maker
-        </button>
-        
-        <div class="w-[1px] h-4 bg-slate-700 mx-1"></div> <span class="text-[10px] uppercase font-bold text-slate-400">Módulo FETEC</span>
-        <label class="switch scale-75">
-            <input type="checkbox" onchange="toggleFetecSystem(this.checked)" ${isFetecActive ? 'checked' : ''}>
-            <span class="slider"></span>
-        </label>
-    </div>
-` : ''}
-                ${isMaker ? `
-                    <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-3 shadow-lg">
-                        <span class="text-[10px] uppercase font-bold text-slate-400">Módulo FETEC</span>
-                        <label class="switch scale-75">
-                            <input type="checkbox" onchange="toggleFetecSystem(this.checked)" ${isFetecActive ? 'checked' : ''}>
-                            <span class="slider"></span>
-                        </label>
-                    </div>` : `<div class="bg-blue-900/20 p-2 px-4 rounded-lg border border-blue-800/30 text-blue-400 text-[10px] uppercase font-black tracking-widest italic">Modo Ciências Ativo</div>`}
-            </div>
-            <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                ${renderFilterSelects('management')}
-              </div>
-              <input type="text" id="search-nome" oninput="applyFilters()" placeholder="🔎 Buscar por Nome..." class="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 text-white">
-            </div>
-            <div class="rounded-xl shadow-lg p-6" style="background-color: ${config.card_color}">
-              <div class="flex justify-between items-center mb-6">
-                <h2 class="font-semibold text-white text-xl uppercase">👥 Lista ${currentLab} (<span id="student-count">0</span>)</h2>
-                <div class="flex gap-2">
-                    <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">🏫 Atribuir</button>
-                    ${isMaker ? `<button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Aluno</button>` : ''}
-                </div>
-              </div>
-              <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
-            </div>
-          </div>
-        </div>
-        ${renderModals()}`;
+            <div class="max-w-7xl mx-auto">
+                ${renderNavigationHeader()}
 
+                <div class="flex justify-end mb-4 no-print">
+                    ${isMaker ? `
+                        <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-3 shadow-lg">
+                            
+                            <button onclick="openAgendaModal()" class="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded-md transition-all flex items-center gap-2 text-[10px] font-bold uppercase">
+                                📅 Agenda Maker
+                            </button>
+                            
+                            <div class="w-[1px] h-4 bg-slate-700 mx-1"></div>
+
+                            <span class="text-[10px] uppercase font-bold text-slate-400">Módulo FETEC</span>
+                            <label class="switch scale-75">
+                                <input type="checkbox" id="fetec-master-switch" onchange="toggleFetecSystem(this.checked)" ${isFetecActive ? 'checked' : ''}>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    ` : `
+                        <div class="bg-blue-900/20 p-2 px-4 rounded-lg border border-blue-800/30">
+                            <span class="text-[10px] uppercase font-bold text-blue-400/60 tracking-widest italic">Modo Ciências Ativo</span>
+                        </div>
+                    `}
+                </div>
+
+                ${isMaker ? `
+                    <div class="rounded-xl shadow-lg p-6 mb-6 transition-all duration-300" style="background-color: ${config.card_color}">
+                        <div class="flex justify-between items-center cursor-pointer" onclick="toggleUploadCard()">
+                            <h2 class="font-semibold text-white text-xl flex items-center gap-2">
+                                📊 Importar Planilha Excel 
+                                <span id="upload-status-badge" class="text-[10px] bg-slate-700 px-2 py-1 rounded uppercase tracking-wider text-slate-400">Oculto</span>
+                            </h2>
+                            <button class="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-lg" id="upload-toggle-btn">
+                                <svg id="upload-icon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div id="upload-content" class="${isUploadCardVisible ? '' : 'hidden'} mt-6 border-t border-slate-700 pt-6">
+                            <div class="flex flex-col sm:flex-row gap-4 items-center">
+                                <input type="file" id="excel-upload" accept=".xlsx,.xls" class="flex-1 w-full p-3 border-2 border-dashed border-slate-600 rounded-lg text-slate-400">
+                                <button onclick="handleExcelUpload()" id="upload-btn" class="w-full sm:w-auto px-6 py-3 rounded-lg font-semibold text-white bg-blue-600">Processar</button>
+                            </div>
+                            <div id="import-progress" class="hidden mt-4">
+                                 <div class="progress-bar"><div id="progress-fill" class="progress-fill bg-blue-500" style="width: 0%"></div></div>
+                                 <p id="progress-text" class="text-slate-400 text-sm mt-2 text-center">Iniciando...</p>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="font-semibold text-white text-xl">🔍 Filtros de Busca</h2>
+                        <button onclick="clearFilters()" class="text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded hover:bg-slate-600">Limpar Filtros</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                        ${renderFilterSelects('management')}
+                    </div>
+                    <input type="text" id="search-nome" oninput="applyFilters()" placeholder="🔎 Digite o nome do aluno..." class="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 text-white focus:border-blue-500 outline-none">
+                </div>
+
+                <div class="rounded-xl shadow-lg p-6" style="background-color: ${config.card_color}">
+                    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
+                        <h2 class="font-semibold text-white text-xl uppercase tracking-tight">
+                            👥 Alunos: ${currentLab} (<span id="student-count">0</span>)
+                        </h2>
+                        
+                        <div class="grid grid-cols-2 lg:flex lg:flex-row gap-2 w-full lg:w-auto">
+                            <button onclick="printStudentList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-600">🖨️ Imprimir</button>
+                            <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-indigo-500">🏫 Atribuir Grupos</button>
+                            
+                            ${isMaker ? `
+                                <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold">➕ Aluno</button>
+                                <button onclick="deleteAllStudents()" class="bg-red-900/40 text-red-200 border border-red-800/50 px-4 py-2 rounded-lg text-xs hover:bg-red-800">🗑️ Limpar Banco</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="bg-slate-900/30 rounded-lg border border-slate-700 overflow-hidden">
+                        <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ${renderModals()}
+    `;
+    
+    // Atualiza opções dos dropdowns e renderiza a tabela
     updateFilterOptions('management');
     renderStudentList();
 }
@@ -800,13 +846,122 @@ ${isMaker ? `
                 </div>
                 </div>
 
-            <div id="agenda-content" class="p-6 overflow-y-auto flex-1 text-center py-20">
-                <p class="text-slate-600 italic">Selecione um professor para visualizar a agenda.</p>
+            // ... dentro do modal.innerHTML
+<div id="agenda-content" class="p-6 overflow-y-auto flex-1 bg-slate-900/50">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 h-fit">
+            <h4 class="text-white font-bold text-sm mb-4 uppercase tracking-wider">➕ Adicionar Aula à Rotina</h4>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] text-slate-500 uppercase font-bold">Dia da Semana</label>
+                    <select id="sched-day" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
+                        <option value="1">Segunda-feira</option>
+                        <option value="2">Terça-feira</option>
+                        <option value="3">Quarta-feira</option>
+                        <option value="4">Quinta-feira</option>
+                        <option value="5">Sexta-feira</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase font-bold">Horário</label>
+                        <input type="time" id="sched-time" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase font-bold">Turma</label>
+                        <input type="text" id="sched-name" placeholder="Ex: 7ºA" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[10px] text-slate-500 uppercase font-bold">Lado de Início (Semana 1)</label>
+                    <select id="sched-side" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white text-sm">
+                        <option value="A">Lado A</option>
+                        <option value="B">Lado B</option>
+                    </select>
+                </div>
+                <button onclick="saveSchedule()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg text-xs uppercase tracking-widest">
+                    💾 Salvar Aula
+                </button>
             </div>
-        </div>`;
+        </div>
+
+        <div class="lg:col-span-2 bg-slate-800/30 rounded-2xl border border-slate-800 p-5">
+            <h4 class="text-white font-bold text-sm mb-4 uppercase tracking-wider">📋 Minha Grade Fixa</h4>
+            <div id="schedule-list" class="space-y-2">
+                <p class="text-slate-600 text-xs italic">Nenhuma aula cadastrada para este professor.</p>
+            </div>
+        </div>
+    </div>
+</div>`;
 
     // Carrega os professores assim que abrir o modal
     loadProfessors();
+}
+
+    async function saveSchedule() {
+    if (!selectedProfessorId) {
+        showToast("Selecione um professor primeiro!", "error");
+        return;
+    }
+
+    const payload = {
+        professor_id: selectedProfessorId,
+        day_of_week: parseInt(document.getElementById('sched-day').value),
+        class_time: document.getElementById('sched-time').value,
+        class_name: document.getElementById('sched-name').value.trim(),
+        start_side: document.getElementById('sched-side').value,
+        start_date: '2026-02-02' // Data padrão de início do ano letivo
+    };
+
+    if (!payload.class_time || !payload.class_name) {
+        showToast("Preencha todos os campos!", "error");
+        return;
+    }
+
+    const { error } = await _supabase.from('maker_schedules').insert([payload]);
+
+    if (error) {
+        showToast("Erro ao salvar aula", "error");
+    } else {
+        showToast("Aula adicionada à rotina!", "success");
+        document.getElementById('sched-name').value = '';
+        loadProfessorSchedule(); // Função que criaremos a seguir
+    }
+}
+
+    async function loadProfessorSchedule() {
+    if (!selectedProfessorId) return;
+
+    const { data, error } = await _supabase
+        .from('maker_schedules')
+        .select('*')
+        .eq('professor_id', selectedProfessorId)
+        .order('day_of_week', { ascending: true })
+        .order('class_time', { ascending: true });
+
+    const listCont = document.getElementById('schedule-list');
+    if (!listCont) return;
+
+    if (error || data.length === 0) {
+        listCont.innerHTML = `<p class="text-slate-600 text-xs italic">Nenhuma aula cadastrada.</p>`;
+        return;
+    }
+
+    const dias = ["", "Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
+
+    listCont.innerHTML = data.map(s => `
+        <div class="flex justify-between items-center bg-slate-900/80 p-3 rounded-xl border border-slate-700">
+            <div>
+                <span class="text-blue-400 font-bold text-xs uppercase">${dias[s.day_of_week]}</span>
+                <span class="text-slate-500 mx-2">•</span>
+                <span class="text-white font-medium text-sm">${s.class_time.substring(0, 5)} - ${s.class_name}</span>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-1 rounded">Início: Lado ${s.start_side}</span>
+                <button onclick="deleteSchedule('${s.id}')" class="text-red-900 hover:text-red-500 transition-colors text-sm">🗑️</button>
+            </div>
+        </div>
+    `).join('');
 }
 
     function renderEvalCard(titulo, ra, grupo, membros = "") {
