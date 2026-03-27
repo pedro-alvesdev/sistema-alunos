@@ -844,6 +844,12 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     // 1. Validação de Segurança: Notas entre 0 e 10
     const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
     let notaInvalida = false;
+
+     if (!prof || prof.length < 3) {
+    showToast("⚠️ Digite seu nome completo no topo da página!", "error");
+    window.scrollTo({top: 0, behavior: 'smooth'}); // Sobe a página para ele ver o campo
+    return;
+}
     
     inputs.forEach(i => {
         // Tratamento para aceitar vírgula ou ponto na validação
@@ -1778,25 +1784,38 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
    async function massAssign(field, value) {
     if (selectedStudentsForAssign.size === 0) return alert("Selecione alunos!");
-    showToast("Processando...", "info");
+    
+    showToast("Processando atribuição...", "info");
 
     const payloads = Array.from(selectedStudentsForAssign).map(id => {
         const s = allStudents.find(x => x.id === id);
         if (!s) return null;
+
+        // BUSCA O VÍNCULO ATUAL DO LAB LOGADO PARA NÃO PERDER O OUTRO CAMPO
+        // Ex: Se você está definindo o GRUPO, precisamos manter o LADO que já existe NESTE lab.
+        const currentAssign = allAssignments.find(a => 
+            a.ra_aluno === s.ra && 
+            a.disciplina === currentLab
+        ) || { lado: null, grupo: null };
+
         return {
             ra_aluno: s.ra,
-            disciplina: currentLab,
-            lado: field === 'parte_sala' ? value : (getStudentAssignment(s.ra).lado || null),
-            grupo: field === 'grupo' ? parseInt(value) : (getStudentAssignment(s.ra).grupo || null)
+            disciplina: currentLab, // Trava a operação no lab atual (maker ou ciencias)
+            lado: field === 'parte_sala' ? value : (currentAssign.lado || null),
+            grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign.grupo || null)
         };
     }).filter(p => p !== null);
 
-    const { error } = await _supabase.from('lab_assignments').upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
+    // O onConflict garante que ele procure o par (RA + DISCIPLINA) antes de decidir se insere ou atualiza
+    const { error } = await _supabase.from('lab_assignments').upsert(payloads, { 
+        onConflict: 'ra_aluno,disciplina' 
+    });
 
     if (error) {
-        showToast("Erro na operação", "error");
+        console.error("Erro na atribuição:", error);
+        showToast("Erro na operação: " + error.message, "error");
     } else {
-        showToast("Sucesso!", "success");
+        showToast(`Sucesso! ${payloads.length} alunos atualizados em ${currentLab.toUpperCase()}`, "success");
         selectedStudentsForAssign.clear();
         await refreshData();
         closeAssignRoomModal();
@@ -1849,29 +1868,40 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     
     // --- AUXILIARES ---
     function applyFilters() {
-        const sede = document.getElementById('filter-sede')?.value || 'todos';
-        const serie = document.getElementById('filter-serie')?.value || 'todos';
-        const turma = document.getElementById('filter-turno')?.value || 'todos';
-        const parte = document.getElementById('filter-parte-sala')?.value || 'todos';
-        const search = document.getElementById('search-nome')?.value.toLowerCase() || '';
+    const sede = document.getElementById('filter-sede')?.value || 'todos';
+    const serie = document.getElementById('filter-serie')?.value || 'todos';
+    const turma = document.getElementById('filter-turno')?.value || 'todos';
+    const parte = document.getElementById('filter-parte-sala')?.value || 'todos';
+    const search = document.getElementById('search-nome')?.value.toLowerCase() || '';
 
-        // 1. Atualiza os dropdowns dinamicamente para encadeamento
-        updateFilterOptions('management', { sede, serie });
+    // 1. Atualiza os dropdowns dinamicamente para encadeamento
+    updateFilterOptions('management', { sede, serie });
 
-        // 2. Filtra a lista principal
-        filteredStudents = allStudents.filter(s => {
-            const mSede = sede === 'todos' || s.sede === sede;
-            const mSerie = serie === 'todos' || s.serie === serie;
-            const mTurma = turma === 'todos' || s.nome_turma === turma;
-            const mSearch = s.nome_aluno.toLowerCase().includes(search);
-            let mParte = true;
-            if(parte === 'nao-atribuido') mParte = !s.parte_sala;
-            else if(parte !== 'todos') mParte = s.parte_sala === parte;
-            
-            return mSede && mSerie && mTurma && mSearch && mParte;
-        });
-        renderStudentList();
-    }
+    // 2. Filtra a lista principal
+    filteredStudents = allStudents.filter(s => {
+        const mSede = sede === 'todos' || s.sede === sede;
+        const mSerie = serie === 'todos' || s.serie === serie;
+        const mTurma = turma === 'todos' || s.nome_turma === turma;
+        const mSearch = s.nome_aluno.toLowerCase().includes(search);
+        
+        // --- BUSCA O VÍNCULO DO LAB ATUAL PARA O FILTRO ---
+        const assign = allAssignments.find(a => 
+            a.ra_aluno === s.ra && 
+            a.disciplina === currentLab
+        ) || { lado: null, grupo: null };
+
+        let mParte = true;
+        if (parte === 'nao-atribuido') {
+            mParte = !assign.lado; // Verifica se o lado está vazio no lab atual
+        } else if (parte !== 'todos') {
+            mParte = assign.lado === parte; // Filtra pelo lado A ou B do lab atual
+        }
+        
+        return mSede && mSerie && mTurma && mSearch && mParte;
+    });
+
+    renderStudentList();
+}
 
    function updateFilterOptions(ctx, currentFilters = {}) {
         const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
@@ -1952,13 +1982,13 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                             <td class="p-3 text-sm">${s.nome_turma}</td>
                             
                             <td class="p-3 text-sm">
-                                <span class="px-2 py-1 rounded ${assign.lado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
-                                    ${assign.lado || '-'}
-                                </span>
-                                <span class="ml-1 font-bold ${assign.grupo ? 'text-emerald-400' : 'text-slate-600'}">
-                                    ${assign.grupo ? 'G' + assign.grupo : ''}
-                                </span>
-                            </td>
+    <span class="px-2 py-1 rounded ${assign.lado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
+        ${assign.lado || '-'}
+    </span>
+    <span class="ml-1 font-bold ${assign.grupo ? 'text-emerald-400' : 'text-slate-600'}">
+        ${assign.grupo ? 'G' + assign.grupo : ''}
+    </span>
+</td>
 
                             <td class="p-3 text-center">
                                 <button onclick="openEditModal('${s.ra}')" title="Editar" class="text-blue-400 hover:text-blue-300 mr-3 transition-colors">
