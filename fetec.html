@@ -1785,6 +1785,12 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
    async function massAssign(field, value) {
+      // ✅ VERIFICAÇÃO SUPABASE
+    if (typeof supabase === 'undefined' || !supabase.from) {
+        showToast("Acesso negado no modo público FETEC! Use código admin (123456/456789).", "error");
+        return;
+    }
+
     if (selectedStudentsForAssign.size === 0) {
         showToast("Selecione alunos na lista primeiro!", "error");
         return;
