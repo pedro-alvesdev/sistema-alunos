@@ -224,11 +224,13 @@ async function refreshData() {
 
         // --- BUSCA DE VÍNCULOS ---
         progressEl.innerText = "Configurando Laboratórios...";
-        const { data: assignData, error: assignError } = await _supabase
-            .from('lab_assignments')
-            .select('*');
+const { data: assignData, error: assignError } = await _supabase
+    .from('lab_assignments')
+    .select('*');
 
-        if (!assignError) allAssignments = assignData;
+        if (!assignError) {
+    allAssignments = assignData; // Atualiza a variável global com dados novos
+}
 
         // --- BUSCA DE FREQUÊNCIA ---
         progressEl.innerText = "Sincronizando Presenças...";
@@ -1788,21 +1790,22 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
         return;
     }
     
-    showLoading("Salvando atribuições em " + currentLab.toUpperCase() + "...");
+    // Mostra o loading para o usuário saber que algo está acontecendo
+    showLoading("Salvando em " + currentLab.toUpperCase() + "...");
 
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca o que já existe para este aluno NESTE laboratório
+            // Busca o que já existe para este aluno NESTE laboratório para preservar o outro campo
             const currentAssign = allAssignments.find(a => 
                 a.ra_aluno === s.ra && a.disciplina === currentLab
             ) || { lado: null, grupo: null };
 
             return {
                 ra_aluno: s.ra,
-                disciplina: currentLab, // Trava no lab atual
+                disciplina: currentLab,
                 lado: field === 'parte_sala' ? value : currentAssign.lado,
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
             };
@@ -1815,17 +1818,23 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
         if (error) throw error;
 
-        showToast(`Sucesso! ${payloads.length} alunos atualizados.`, "success");
+        // --- SUCESSO ---
+        showToast(`✅ ${payloads.length} alunos atualizados!`, "success");
         
-        // LIMPEZA E ATUALIZAÇÃO REAL
+        // 1. Limpa a seleção e fecha o modal
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // IMPORTANTE: Recarrega os dados do banco para atualizar a memória 'allAssignments'
+        // 2. RECARREGA TUDO DO BANCO (Atualiza allAssignments na memória)
         await refreshData(); 
         
+        // 3. FORÇA A REAPLICAÇÃO DOS FILTROS E REDESENHO DA TABELA
+        if (currentScreen === 'management') {
+            applyFilters(); 
+        }
+
     } catch (err) {
-        console.error("Erro na atribuição:", err);
+        console.error("Erro crítico na atribuição:", err);
         showToast("Erro ao salvar: " + err.message, "error");
     } finally {
         hideLoading();
