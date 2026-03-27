@@ -1792,50 +1792,56 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
  async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) return showToast("Selecione alunos!", "error");
-    
-    showLoading(`Sincronizando ${currentLab.toUpperCase()}...`);
+    if (selectedStudentsForAssign.size === 0) {
+        showToast("Selecione alunos na lista primeiro!", "error");
+        return;
+    }
+
+    showLoading(`Salvando em ${currentLab.toUpperCase()}...`);
     
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca vínculo atual para preservar dados existentes
+            // Busca o vínculo atual para não perder o grupo ao definir lado (e vice-versa)
             const currentAssign = allAssignments.find(a => 
                 a.ra_aluno === s.ra && a.disciplina === currentLab
             );
 
             return {
-                ra_aluno: s.ra, // Nome exato da coluna no banco
+                ra_aluno: String(s.ra).trim(), // Usando o nome exato da sua coluna
                 disciplina: currentLab,
                 lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
             };
         }).filter(p => p !== null);
 
-        // Tentativa de gravação
+        // Envio para o banco
         const { error } = await _supabase
             .from('lab_assignments')
             .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
         if (error) {
-            console.error("Erro detalhado do Supabase:", error);
-            // Se der erro 400 aqui, saberemos se é o nome da coluna
-            throw new Error(error.message);
+            console.error("Erro detalhado Supabase:", error);
+            throw error;
         }
 
-        showToast("Dados atualizados com sucesso!", "success");
+        showToast(`${payloads.length} alunos atualizados com sucesso!`, "success");
+
+        // Limpa seleção e fecha modal
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // Atualiza memória e interface
+        // RECARREGA E REDESENHA
         await refreshData();
-        if (currentScreen === 'management') applyFilters();
+        if (currentScreen === 'management') {
+            applyFilters();
+        }
 
     } catch (err) {
-        console.error("Erro na função massAssign:", err);
-        showToast("Erro: Verifique as colunas do banco.", "error");
+        console.error("Erro na atribuição:", err);
+        showToast("Erro ao salvar no banco de dados.", "error");
     } finally {
         hideLoading();
     }
