@@ -351,11 +351,16 @@ function hideLoading() {
 }
 
     async function startPublicEvaluation() {
-    isAuthenticated = false; // Define que não é o administrador
-    currentUser = 'avaliador_fetec';
+    isAuthenticated = false;  // Mantém modo público
+    currentUser = 'avaliadorfetec';
+    
+    // ✅ CORREÇÃO: Recria Supabase para modo FETEC
+    const { createClient } = supabase;  // Usa a lib já carregada
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    
     showToast("Carregando sistema de avaliação...", "info");
     await refreshData();
-    renderEvaluationScreen(); // Esta função será criada no Passo 3
+    renderEvaluationScreen();  // Agora massAssign funciona aqui!
 }
 
     // --- INTERFACE: HEADER & NAVEGAÇÃO ---
@@ -1785,10 +1790,9 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
    async function massAssign(field, value) {
-      // ✅ VERIFICAÇÃO SUPABASE
-    if (typeof supabase === 'undefined' || !supabase.from) {
-        showToast("Acesso negado no modo público FETEC! Use código admin (123456/456789).", "error");
-        return;
+    // ✅ Proteção: Recria supabase se necessário
+    if (typeof window.supabase === 'undefined' || !window.supabase.from) {
+        window.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
     }
 
     if (selectedStudentsForAssign.size === 0) {
@@ -1796,15 +1800,12 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
         return;
     }
 
-    // Mostra o loading para o usuário saber que algo está acontecendo
     showLoading(`Salvando em ${currentLab.toUpperCase()}...`);
-
+    
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
-
-            // Busca o que já existe para este aluno NESTE laboratório para preservar o outro campo
             const currentAssign = allAssignments.find(a => a.raaluno === s.ra && a.disciplina === currentLab);
             return {
                 raaluno: s.ra,
@@ -1814,24 +1815,19 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
             };
         }).filter(p => p !== null);
 
-        // Envia para o Supabase
-        const { error } = await supabase
+        const { error } = await window.supabase
             .from('labassignments')
             .upsert(payloads, { onConflict: 'raaluno,disciplina' });
 
         if (error) throw error;
 
-        // SUCESSO
         showToast(`${payloads.length} alunos atualizados!`, "success");
 
-        // 1. Limpa a seleção e fecha o modal
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
-
-        // ✅ CORREÇÃO: Recarrega dados E força re-render da tabela
-        await refreshData();  // Atualiza allAssignments do banco
+        await refreshData();
         if (currentScreen === 'management') {
-            applyFilters();  // Reaplica filtros e redesenha a tabela com novos lados/grupos
+            applyFilters();
         }
 
     } catch (err) {
