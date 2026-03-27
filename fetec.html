@@ -1791,7 +1791,7 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 }
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
- async function massAssign(field, value) {
+async function massAssign(field, value) {
     if (selectedStudentsForAssign.size === 0) return showToast("Selecione alunos!", "error");
     
     showLoading(`Sincronizando ${currentLab.toUpperCase()}...`);
@@ -1801,36 +1801,42 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca vínculo atual para preservar dados existentes (ex: não apagar o grupo ao definir o lado)
+            // Busca vínculo atual para preservar o outro campo (se mudar lado, mantém o grupo e vice-versa)
             const currentAssign = allAssignments.find(a => 
-                a.ra_aluno === s.ra && a.disciplina === currentLab
+                String(a.ra_aluno).trim() === String(s.ra).trim() && a.disciplina === currentLab
             );
 
             return {
-                ra_aluno: String(s.ra).trim(), // Nome exato da coluna
-                disciplina: currentLab,        // Nome exato da coluna
+                ra_aluno: String(s.ra).trim(),
+                disciplina: currentLab,
                 lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
             };
         }).filter(p => p !== null);
 
-        const { error } = await _supabase
+        const { data, error } = await _supabase
             .from('lab_assignments')
-            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
+            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' })
+            .select(); // O select() ajuda a garantir que recebemos o que foi salvo
 
         if (error) throw error;
 
+        // --- ATUALIZAÇÃO DA MEMÓRIA LOCAL ---
+        // Removemos os registros antigos desses alunos para o lab atual e inserimos os novos
+        const rasAtualizados = payloads.map(p => p.ra_aluno);
+        allAssignments = allAssignments.filter(a => 
+            !(rasAtualizados.includes(String(a.ra_aluno).trim()) && a.disciplina === currentLab)
+        );
+        allAssignments.push(...payloads);
+
         showToast(`${payloads.length} alunos atualizados!`, "success");
+        
+        // Limpa seleção e fecha modal
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // RECARREGA OS DADOS DO BANCO PARA A MEMÓRIA
-        await refreshData();
-        
-        // REDESENHA A TABELA IMEDIATAMENTE
-        if (currentScreen === 'management') {
-            applyFilters();
-        }
+        // Redesenha a interface imediatamente
+        applyFilters();
 
     } catch (err) {
         console.error("Erro na atribuição:", err);
@@ -1985,9 +1991,9 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                         
                         // BUSCA O VÍNCULO USANDO OS NOMES EXATOS DO SEU BANCO
                         const assign = allAssignments.find(a => 
-                            String(a.ra_aluno).trim() === String(s.ra).trim() && 
-                            a.disciplina === currentLab
-                        ) || { lado: null, grupo: null };
+    String(a.ra_aluno).trim() === String(s.ra).trim() && 
+    a.disciplina === currentLab
+) || { lado: null, grupo: null };
 
                         return `
                         <tr class="border-b border-slate-700 hover:bg-slate-700/30">
