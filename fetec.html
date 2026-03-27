@@ -1804,34 +1804,37 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca o vínculo atual para não apagar o grupo ao definir o lado (e vice-versa)
+            // BUSCA O VÍNCULO ATUAL REAL (Usando os nomes de colunas corretos ra_aluno e disciplina)
             const currentAssign = allAssignments.find(a => 
                 a.ra_aluno === s.ra && a.disciplina === currentLab
             );
 
             return {
-                ra_aluno: s.ra, // Corrigido de raaluno para ra_aluno
+                ra_aluno: s.ra,
                 disciplina: currentLab,
+                // CORREÇÃO AQUI: field vem como 'parte_sala' do clique do botão
                 lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
             };
         }).filter(p => p !== null);
 
-        // Usa a variável global correta: _supabase
+        // Envia para a tabela 'lab_assignments'
         const { error } = await _supabase
             .from('lab_assignments')
             .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
         if (error) throw error;
 
-        showToast(`${payloads.length} alunos atualizados!`, "success");
+        showToast(`${payloads.length} alunos atualizados em ${currentLab.toUpperCase()}!`, "success");
 
-        // Limpeza e Atualização da Interface
+        // Limpeza
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // RECARREGA OS DADOS E REDESENHA A TABELA
+        // RECARREGA TUDO DO BANCO PARA ATUALIZAR A VARIÁVEL 'allAssignments'
         await refreshData();
+        
+        // REAPLICA OS FILTROS PARA DESENHAR A TABELA COM OS NOVOS LADOS
         if (currentScreen === 'management') {
             applyFilters();
         }
