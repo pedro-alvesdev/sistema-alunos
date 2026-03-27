@@ -1789,9 +1789,9 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
         showToast("Selecione alunos na lista primeiro!", "error");
         return;
     }
-    
+
     // Mostra o loading para o usuário saber que algo está acontecendo
-    showLoading("Salvando em " + currentLab.toUpperCase() + "...");
+    showLoading(`Salvando em ${currentLab.toUpperCase()}...`);
 
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
@@ -1799,38 +1799,33 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
             if (!s) return null;
 
             // Busca o que já existe para este aluno NESTE laboratório para preservar o outro campo
-            const currentAssign = allAssignments.find(a => 
-                a.ra_aluno === s.ra && a.disciplina === currentLab
-            ) || { lado: null, grupo: null };
-
+            const currentAssign = allAssignments.find(a => a.raaluno === s.ra && a.disciplina === currentLab);
             return {
-                ra_aluno: s.ra,
+                raaluno: s.ra,
                 disciplina: currentLab,
-                lado: field === 'parte_sala' ? value : currentAssign.lado,
-                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
+                lado: field === 'partesala' ? value : currentAssign?.lado,
+                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign?.grupo
             };
         }).filter(p => p !== null);
 
         // Envia para o Supabase
-        const { error } = await _supabase
-            .from('lab_assignments')
-            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
+        const { error } = await supabase
+            .from('labassignments')
+            .upsert(payloads, { onConflict: 'raaluno,disciplina' });
 
         if (error) throw error;
 
-        // --- SUCESSO ---
-        showToast(`✅ ${payloads.length} alunos atualizados!`, "success");
-        
+        // SUCESSO
+        showToast(`${payloads.length} alunos atualizados!`, "success");
+
         // 1. Limpa a seleção e fecha o modal
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
-        
-        // 2. RECARREGA TUDO DO BANCO (Atualiza allAssignments na memória)
-        await refreshData(); 
-        
-        // 3. FORÇA A REAPLICAÇÃO DOS FILTROS E REDESENHO DA TABELA
+
+        // ✅ CORREÇÃO: Recarrega dados E força re-render da tabela
+        await refreshData();  // Atualiza allAssignments do banco
         if (currentScreen === 'management') {
-            applyFilters(); 
+            applyFilters();  // Reaplica filtros e redesenha a tabela com novos lados/grupos
         }
 
     } catch (err) {
