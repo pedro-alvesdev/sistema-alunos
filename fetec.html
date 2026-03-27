@@ -1791,57 +1791,45 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 }
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
-  async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) {
-        showToast("Selecione alunos na lista primeiro!", "error");
-        return;
-    }
-
-    showLoading(`Salvando em ${currentLab.toUpperCase()}...`);
+ async function massAssign(field, value) {
+    if (selectedStudentsForAssign.size === 0) return showToast("Selecione alunos!", "error");
+    showLoading(`Sincronizando ${currentLab.toUpperCase()}...`);
     
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // BUSCA O VÍNCULO ATUAL REAL (Usando os nomes de colunas corretos ra_aluno e disciplina)
             const currentAssign = allAssignments.find(a => 
-                a.ra_aluno === s.ra && a.disciplina === currentLab
+                (a.ra_aluno === s.ra || a.raaluno === s.ra) && a.disciplina === currentLab
             );
 
+            // Criamos um objeto com as duas variações de nome de coluna para garantir o acerto no banco
             return {
                 ra_aluno: s.ra,
+                raaluno: s.ra,
                 disciplina: currentLab,
-                // CORREÇÃO AQUI: field vem como 'parte_sala' do clique do botão
-                lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
+                lado: field === 'parte_sala' ? value : (currentAssign ? (currentAssign.lado || currentAssign.partesala) : null),
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
             };
         }).filter(p => p !== null);
 
-        // Envia para a tabela 'lab_assignments'
-        const { error } = await _supabase
-            .from('lab_assignments')
-            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
+        const { error } = await _supabase.from('lab_assignments').upsert(payloads, { 
+            onConflict: 'ra_aluno,disciplina' 
+        });
 
         if (error) throw error;
 
-        showToast(`${payloads.length} alunos atualizados em ${currentLab.toUpperCase()}!`, "success");
-
-        // Limpeza
+        showToast("Dados atualizados!", "success");
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // RECARREGA TUDO DO BANCO PARA ATUALIZAR A VARIÁVEL 'allAssignments'
-        await refreshData();
+        await refreshData(); // Isso puxa os dados novos para a memória
+        applyFilters();      // Isso redesenha a tabela imediatamente
         
-        // REAPLICA OS FILTROS PARA DESENHAR A TABELA COM OS NOVOS LADOS
-        if (currentScreen === 'management') {
-            applyFilters();
-        }
-
     } catch (err) {
-        console.error("Erro crítico na atribuição:", err);
-        showToast("Erro ao salvar: " + err.message, "error");
+        console.error(err);
+        showToast("Erro ao salvar", "error");
     } finally {
         hideLoading();
     }
@@ -1992,10 +1980,12 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                     .map((s, index) => {
                         // BUSCA O VÍNCULO ESPECÍFICO (Maker ou Ciências)
                         // Esta é a parte vital: ela procura o RA e a Disciplina atual
-                        const assign = allAssignments.find(a => 
-                            a.ra_aluno === s.ra && 
-                            a.disciplina === currentLab
-                        ) || { lado: null, grupo: null };
+                       const assign = allAssignments.find(a => 
+    (a.ra_aluno === s.ra || a.raaluno === s.ra) && 
+    a.disciplina === currentLab
+) || { lado: null, grupo: null };
+                      const exLado = assign.lado || assign.partesala || null;
+const exGrupo = assign.grupo || null;
 
                         return `
                         <tr class="border-b border-slate-700 hover:bg-slate-700/30">
@@ -2007,11 +1997,11 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                             <td class="p-3 text-sm">${s.nome_turma}</td>
                             
                             <td class="p-3 text-sm">
-    <span class="px-2 py-1 rounded ${assign.lado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
-        ${assign.lado || '-'}
+    <span class="px-2 py-1 rounded ${exLado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
+        ${exLado || '-'}
     </span>
-    <span class="ml-1 font-bold ${assign.grupo ? 'text-emerald-400' : 'text-slate-600'}">
-        ${assign.grupo ? 'G' + assign.grupo : ''}
+    <span class="ml-1 font-bold ${exGrupo ? 'text-emerald-400' : 'text-slate-600'}">
+        ${exGrupo ? 'G' + exGrupo : ''}
     </span>
 </td>
 
