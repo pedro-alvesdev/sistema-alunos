@@ -1783,42 +1783,52 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
    async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) return alert("Selecione alunos!");
+    if (selectedStudentsForAssign.size === 0) {
+        showToast("Selecione alunos na lista primeiro!", "error");
+        return;
+    }
     
-    showToast("Processando atribuição...", "info");
+    showLoading("Salvando atribuições em " + currentLab.toUpperCase() + "...");
 
-    const payloads = Array.from(selectedStudentsForAssign).map(id => {
-        const s = allStudents.find(x => x.id === id);
-        if (!s) return null;
+    try {
+        const payloads = Array.from(selectedStudentsForAssign).map(id => {
+            const s = allStudents.find(x => x.id === id);
+            if (!s) return null;
 
-        // BUSCA O VÍNCULO ATUAL DO LAB LOGADO PARA NÃO PERDER O OUTRO CAMPO
-        // Ex: Se você está definindo o GRUPO, precisamos manter o LADO que já existe NESTE lab.
-        const currentAssign = allAssignments.find(a => 
-            a.ra_aluno === s.ra && 
-            a.disciplina === currentLab
-        ) || { lado: null, grupo: null };
+            // Busca o que já existe para este aluno NESTE laboratório
+            const currentAssign = allAssignments.find(a => 
+                a.ra_aluno === s.ra && a.disciplina === currentLab
+            ) || { lado: null, grupo: null };
 
-        return {
-            ra_aluno: s.ra,
-            disciplina: currentLab, // Trava a operação no lab atual (maker ou ciencias)
-            lado: field === 'parte_sala' ? value : (currentAssign.lado || null),
-            grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign.grupo || null)
-        };
-    }).filter(p => p !== null);
+            return {
+                ra_aluno: s.ra,
+                disciplina: currentLab, // Trava no lab atual
+                lado: field === 'parte_sala' ? value : currentAssign.lado,
+                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
+            };
+        }).filter(p => p !== null);
 
-    // O onConflict garante que ele procure o par (RA + DISCIPLINA) antes de decidir se insere ou atualiza
-    const { error } = await _supabase.from('lab_assignments').upsert(payloads, { 
-        onConflict: 'ra_aluno,disciplina' 
-    });
+        // Envia para o Supabase
+        const { error } = await _supabase
+            .from('lab_assignments')
+            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
-    if (error) {
-        console.error("Erro na atribuição:", error);
-        showToast("Erro na operação: " + error.message, "error");
-    } else {
-        showToast(`Sucesso! ${payloads.length} alunos atualizados em ${currentLab.toUpperCase()}`, "success");
+        if (error) throw error;
+
+        showToast(`Sucesso! ${payloads.length} alunos atualizados.`, "success");
+        
+        // LIMPEZA E ATUALIZAÇÃO REAL
         selectedStudentsForAssign.clear();
-        await refreshData();
         closeAssignRoomModal();
+        
+        // IMPORTANTE: Recarrega os dados do banco para atualizar a memória 'allAssignments'
+        await refreshData(); 
+        
+    } catch (err) {
+        console.error("Erro na atribuição:", err);
+        showToast("Erro ao salvar: " + err.message, "error");
+    } finally {
+        hideLoading();
     }
 }
 
