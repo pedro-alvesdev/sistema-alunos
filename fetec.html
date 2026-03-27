@@ -187,20 +187,36 @@ td {
       font_size: 16
     };
 
-    // --- CARREGAMENTO DE DADOS ---
+// --- CARREGAMENTO DE DADOS (VERSÃO SINCRONIZADA TOTAL) ---
 async function refreshData() {
-    showLoading("Iniciando sincronização...");
+    showLoading("Sincronizando Banco de Dados...");
     const progressEl = document.getElementById('loader-progress');
 
     try {
+        // 1. BUSCA DE VÍNCULOS (LAB_ASSIGNMENTS)
+        // Buscamos primeiro os grupos para garantir que, ao carregar o aluno, o grupo já esteja na memória
+        progressEl.innerText = "Buscando grupos e lados...";
+        const { data: assignData, error: assignError } = await _supabase
+            .from('lab_assignments')
+            .select('*');
+
+        if (assignError) {
+            console.error("Erro ao buscar vínculos:", assignError);
+            showToast("Erro ao carregar grupos", "error");
+        } else {
+            // Atualiza a variável global com os dados mais recentes do servidor
+            allAssignments = assignData || [];
+        }
+
+        // 2. BUSCA DE ALUNOS (PAGINAÇÃO PARA > 1000 ALUNOS)
         let allFetchedStudents = [];
         let page = 0;
         const pageSize = 1000;
         let lastCount = 0;
 
-        // --- BUSCA DE ALUNOS ---
+        progressEl.innerText = "Carregando lista de alunos...";
+        
         do {
-            // Buscamos os alunos. Nota: removi o 'count: exact' temporariamente para acelerar a resposta do banco
             const { data, error } = await _supabase
                 .from('students')
                 .select('*')
@@ -217,51 +233,50 @@ async function refreshData() {
             lastCount = data.length;
             page++;
 
-            progressEl.innerText = `Carregando Alunos... ${allFetchedStudents.length}`;
+            progressEl.innerText = `Alunos carregados: ${allFetchedStudents.length}`;
         } while (lastCount === pageSize);
 
         allStudents = allFetchedStudents;
 
-        // --- BUSCA DE VÍNCULOS ---
-        progressEl.innerText = "Configurando Laboratórios...";
-const { data: assignData, error: assignError } = await _supabase
-    .from('lab_assignments')
-    .select('*');
-
-        if (!assignError) {
-    allAssignments = assignData; // Atualiza a variável global com dados novos
-}
-
-        // --- BUSCA DE FREQUÊNCIA ---
-        progressEl.innerText = "Sincronizando Presenças...";
+        // 3. BUSCA DE FREQUÊNCIA (DATA SELECIONADA)
+        progressEl.innerText = "Sincronizando chamadas...";
         const dKey = selectedDate.toISOString().split('T')[0];
         const { data: attData, error: attError } = await _supabase
             .from('attendance')
             .select('*')
             .eq('data_presenca', dKey);
 
-        if (!attError) allAttendances = attData;
+        if (!attError) {
+            allAttendances = attData || [];
+        }
 
-        // --- FINALIZAÇÃO ---
-        progressEl.innerText = "Renderizando interface...";
+        // 4. ATUALIZAÇÃO DA INTERFACE
+        // Força a re-filtragem baseada nos novos dados que acabaram de chegar do banco
+        progressEl.innerText = "Renderizando painel...";
         
-        // Aplica os filtros para garantir que a lista 'filteredStudents' seja populada
         if (currentScreen === 'management') {
             applyFilters(); 
         } else if (currentScreen === 'attendance') {
             applyAttendanceFilters();
+        } else if (currentScreen === 'evaluation') {
+            applyEvalList();
+        } else if (currentScreen === 'results') {
+            generateRanking();
         }
+
+        showToast("Sincronização concluída!", "success");
 
     } catch (err) {
         console.error("Erro crítico no refreshData:", err);
-        showToast("Erro de conexão. Tente recarregar.", "error");
+        showToast("Falha na conexão com o servidor", "error");
     } finally {
-        // GARANTIA: Esconde o loading de qualquer jeito após 1 segundo
+        // Delay suave para o usuário perceber que terminou
         setTimeout(() => {
             hideLoading();
-        }, 1000);
+        }, 800);
     }
 }
+
 
     // --- INTERFACE: LOGIN ---
     function showLoginScreen() {
