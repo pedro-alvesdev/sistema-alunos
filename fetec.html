@@ -350,17 +350,22 @@ function hideLoading() {
     }, 500);
 }
 
-    async function startPublicEvaluation() {
-    isAuthenticated = false;  // Mantém modo público
-    currentUser = 'avaliadorfetec';
+   async function startPublicEvaluation() {
+    // Mudamos isAuthenticated para true para que o sistema libere os botões de interface
+    // mas mantemos o currentUser diferente para saber que é um avaliador externo
+    isAuthenticated = true; 
+    currentUser = 'avaliador_fetec_full';
     
-    // ✅ CORREÇÃO: Recria Supabase para modo FETEC
-    const { createClient } = supabase;  // Usa a lib já carregada
-    window.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    showToast("Modo Avaliação com permissão de edição ativado", "info");
     
-    showToast("Carregando sistema de avaliação...", "info");
-    await refreshData();
-    renderEvaluationScreen();  // Agora massAssign funciona aqui!
+    try {
+        await refreshData();
+        // Você pode escolher abrir direto na avaliação ou na gestão
+        renderEvaluationScreen(); 
+    } catch (err) {
+        console.error("Erro ao iniciar:", err);
+        showToast("Erro ao carregar dados.", "error");
+    }
 }
 
     // --- INTERFACE: HEADER & NAVEGAÇÃO ---
@@ -848,18 +853,22 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
 }
 
    async function saveFetecEval(ra, grupo, cardId) {
-    // 1. Validação de Segurança: Notas entre 0 e 10
+    // 1. CAPTURA E VALIDAÇÃO DO AVALIADOR
+    const profInput = document.getElementById('evaluator-name');
+    const prof = profInput ? profInput.value.trim() : "";
+
+    if (!prof || prof.length < 3) {
+        showToast("⚠️ Digite seu nome completo no topo da página!", "error");
+        if (profInput) profInput.focus();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
+    // 2. VALIDAÇÃO DE NOTAS (0 A 10)
     const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
     let notaInvalida = false;
-
-     if (!prof || prof.length < 3) {
-    showToast("⚠️ Digite seu nome completo no topo da página!", "error");
-    window.scrollTo({top: 0, behavior: 'smooth'}); // Sobe a página para ele ver o campo
-    return;
-}
     
     inputs.forEach(i => {
-        // Tratamento para aceitar vírgula ou ponto na validação
         const v = parseFloat(i.value.toString().replace(',', '.'));
         if (isNaN(v) || v > 10 || v < 0) notaInvalida = true;
     });
@@ -869,20 +878,7 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         return;
     }
 
-    // 2. Captura de Contexto (Sede, Série, Turma e Lado)
-    const prof = document.getElementById('evaluator-name').value.trim();
-    const ladoSelecionado = document.getElementById('ev-lado').value;
-    const sedeAtual = document.getElementById('ev-sede').value;
-    const serieAtual = document.getElementById('ev-serie').value;
-    const turmaAtual = document.getElementById('ev-turma').value;
-
-    if (!prof) {
-        showToast("⚠️ Digite seu nome antes de avaliar!", "error");
-        document.getElementById('evaluator-name').focus();
-        return;
-    }
-
-    // 3. Feedback Visual de Processamento
+    // 3. FEEDBACK VISUAL DE PROCESSAMENTO
     const card = document.getElementById(`card-${cardId}`);
     const btn = card.querySelector('button');
     const originalBtnText = btn.innerText;
@@ -891,7 +887,7 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     btn.innerText = "⏳ Sincronizando...";
     card.style.opacity = "0.7";
 
-    // 4. Tratamento de Notas (Converte vírgula para ponto)
+    // 4. TRATAMENTO DE NOTAS (Conversão segura de vírgula para ponto)
     const getNotaLimpa = (sub) => {
         const input = document.getElementById(`nota-${cardId}-${sub}`);
         if (!input || !input.value) return 0;
@@ -899,10 +895,15 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         return isNaN(valor) ? 0 : valor;
     };
 
-    // 5. Montagem do Objeto de Dados
+    // 5. MONTAGEM DOS DADOS (Contexto atual da tela)
+    const ladoSelecionado = document.getElementById('ev-lado').value;
+    const sedeAtual = document.getElementById('ev-sede').value;
+    const serieAtual = document.getElementById('ev-serie').value;
+    const turmaAtual = document.getElementById('ev-turma').value;
+
     const payload = {
-        ra_aluno: ra !== 'null' ? ra : null,
-        grupo: grupo !== 'null' ? parseInt(grupo) : null,
+        ra_aluno: (ra && ra !== 'null' && ra !== 'undefined') ? ra : null,
+        grupo: (grupo && grupo !== 'null' && grupo !== 'undefined') ? parseInt(grupo) : null,
         lado: ladoSelecionado,
         nome_professor: prof,
         disciplina: currentLab,
@@ -910,8 +911,8 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         
         nota_oralidade: getNotaLimpa('Oralidade'),
         nota_postura: getNotaLimpa('Postura'),
-        nota_dominio: getNotaLimpa('Dominio'), // Unificamos aqui
-        nota_clareza: 0, // Zera as colunas antigas para não bugar
+        nota_dominio: getNotaLimpa('Dominio'),
+        nota_clareza: 0, 
         nota_transmissao: 0,
         
         observacao: document.getElementById(`obs-${cardId}`).value,
@@ -922,37 +923,38 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         usuario_sistema: currentUser
     };
 
-    // 6. ENVIO COM UPSERT (Atualiza se já existir nota deste professor para este grupo)
-    const { error: dbError } = await _supabase
-        .from('evaluations_fetec')
-        .upsert([payload], { 
-            onConflict: 'nome_professor, ra_aluno, grupo, lado, nome_turma, disciplina, sede' 
-        });
+    // 6. ENVIO AO SUPABASE (UPSERT)
+    try {
+        const { error: dbError } = await _supabase
+            .from('evaluations_fetec')
+            .upsert([payload], { 
+                onConflict: 'nome_professor, ra_aluno, grupo, lado, nome_turma, disciplina, sede' 
+            });
 
-    if (dbError) {
-        console.error("Erro Supabase:", dbError);
-        showToast("❌ Erro ao salvar: " + dbError.message, "error");
-        btn.disabled = false;
-        btn.innerText = originalBtnText;
-        card.style.opacity = "1";
-    } else {
+        if (dbError) throw dbError;
+
         showToast("✅ Avaliação Sincronizada!", "success");
         
-        // 7. Feedback de Sucesso (Mantém editável para correções)
+        // Feedback de sucesso no Card
         card.classList.add('border-emerald-500/50');
         card.style.opacity = "1";
         btn.disabled = false;
         btn.innerText = "🔄 Atualizar Nota";
         btn.classList.replace('bg-emerald-600', 'bg-blue-600');
         
-        // Bloqueia o nome do professor para evitar troca acidental durante a sessão
-        document.getElementById('evaluator-name').readOnly = true;
-        document.getElementById('evaluator-name').classList.add('bg-slate-800', 'text-slate-400');
+        // Trava o nome do professor para evitar erros acidentais
+        profInput.readOnly = true;
+        profInput.classList.add('bg-slate-800', 'text-slate-400');
 
-        // 8. Focar no próximo card se houver
-        if (typeof focusNextCard === "function") {
-            focusNextCard(cardId);
-        }
+        // Foca automaticamente no próximo card da lista
+        focusNextCard(cardId);
+
+    } catch (error) {
+        console.error("Erro Supabase:", error);
+        showToast("❌ Erro ao salvar: " + error.message, "error");
+        btn.disabled = false;
+        btn.innerText = originalBtnText;
+        card.style.opacity = "1";
     }
 }
 
@@ -1789,12 +1791,7 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 }
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
-   async function massAssign(field, value) {
-    // ✅ Proteção: Recria supabase se necessário
-    if (typeof window.supabase === 'undefined' || !window.supabase.from) {
-        window.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-    }
-
+  async function massAssign(field, value) {
     if (selectedStudentsForAssign.size === 0) {
         showToast("Selecione alunos na lista primeiro!", "error");
         return;
@@ -1806,25 +1803,34 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
-            const currentAssign = allAssignments.find(a => a.raaluno === s.ra && a.disciplina === currentLab);
+
+            // Busca o vínculo atual para não apagar o grupo ao definir o lado (e vice-versa)
+            const currentAssign = allAssignments.find(a => 
+                a.ra_aluno === s.ra && a.disciplina === currentLab
+            );
+
             return {
-                raaluno: s.ra,
+                ra_aluno: s.ra, // Corrigido de raaluno para ra_aluno
                 disciplina: currentLab,
-                lado: field === 'partesala' ? value : currentAssign?.lado,
-                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign?.grupo
+                lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
+                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
             };
         }).filter(p => p !== null);
 
-        const { error } = await window.supabase
-            .from('labassignments')
-            .upsert(payloads, { onConflict: 'raaluno,disciplina' });
+        // Usa a variável global correta: _supabase
+        const { error } = await _supabase
+            .from('lab_assignments')
+            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
         if (error) throw error;
 
         showToast(`${payloads.length} alunos atualizados!`, "success");
 
+        // Limpeza e Atualização da Interface
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
+        
+        // RECARREGA OS DADOS E REDESENHA A TABELA
         await refreshData();
         if (currentScreen === 'management') {
             applyFilters();
