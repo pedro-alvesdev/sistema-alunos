@@ -1792,56 +1792,49 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
  async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) {
-        showToast("Selecione alunos na lista primeiro!", "error");
-        return;
-    }
-
-    showLoading(`Salvando em ${currentLab.toUpperCase()}...`);
+    if (selectedStudentsForAssign.size === 0) return showToast("Selecione alunos!", "error");
+    
+    showLoading(`Sincronizando ${currentLab.toUpperCase()}...`);
     
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca o vínculo atual para não perder o grupo ao definir lado (e vice-versa)
+            // Busca vínculo atual para preservar dados existentes (ex: não apagar o grupo ao definir o lado)
             const currentAssign = allAssignments.find(a => 
                 a.ra_aluno === s.ra && a.disciplina === currentLab
             );
 
             return {
-                ra_aluno: String(s.ra).trim(), // Usando o nome exato da sua coluna
-                disciplina: currentLab,
+                ra_aluno: String(s.ra).trim(), // Nome exato da coluna
+                disciplina: currentLab,        // Nome exato da coluna
                 lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
             };
         }).filter(p => p !== null);
 
-        // Envio para o banco
         const { error } = await _supabase
             .from('lab_assignments')
             .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
-        if (error) {
-            console.error("Erro detalhado Supabase:", error);
-            throw error;
-        }
+        if (error) throw error;
 
-        showToast(`${payloads.length} alunos atualizados com sucesso!`, "success");
-
-        // Limpa seleção e fecha modal
+        showToast(`${payloads.length} alunos atualizados!`, "success");
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // RECARREGA E REDESENHA
+        // RECARREGA OS DADOS DO BANCO PARA A MEMÓRIA
         await refreshData();
+        
+        // REDESENHA A TABELA IMEDIATAMENTE
         if (currentScreen === 'management') {
             applyFilters();
         }
 
     } catch (err) {
         console.error("Erro na atribuição:", err);
-        showToast("Erro ao salvar no banco de dados.", "error");
+        showToast("Erro ao salvar no banco.", "error");
     } finally {
         hideLoading();
     }
@@ -1972,7 +1965,6 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     const count = document.getElementById('student-count');
     if(!cont) return;
     
-    // Atualiza o contador de alunos filtrados na tela
     count.innerText = filteredStudents.length;
 
     cont.innerHTML = `
@@ -1990,14 +1982,12 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                 ${filteredStudents
                     .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
                     .map((s, index) => {
-                        // BUSCA O VÍNCULO ESPECÍFICO (Maker ou Ciências)
-                        // Esta é a parte vital: ela procura o RA e a Disciplina atual
-                       const assign = allAssignments.find(a => 
-    (a.ra_aluno === s.ra || a.raaluno === s.ra) && 
-    a.disciplina === currentLab
-) || { lado: null, grupo: null };
-                      const exLado = assign.lado || assign.partesala || null;
-const exGrupo = assign.grupo || null;
+                        
+                        // BUSCA O VÍNCULO USANDO OS NOMES EXATOS DO SEU BANCO
+                        const assign = allAssignments.find(a => 
+                            String(a.ra_aluno).trim() === String(s.ra).trim() && 
+                            a.disciplina === currentLab
+                        ) || { lado: null, grupo: null };
 
                         return `
                         <tr class="border-b border-slate-700 hover:bg-slate-700/30">
@@ -2009,13 +1999,13 @@ const exGrupo = assign.grupo || null;
                             <td class="p-3 text-sm">${s.nome_turma}</td>
                             
                             <td class="p-3 text-sm">
-    <span class="px-2 py-1 rounded ${exLado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
-        ${exLado || '-'}
-    </span>
-    <span class="ml-1 font-bold ${exGrupo ? 'text-emerald-400' : 'text-slate-600'}">
-        ${exGrupo ? 'G' + exGrupo : ''}
-    </span>
-</td>
+                                <span class="px-2 py-1 rounded ${assign.lado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
+                                    ${assign.lado || '-'}
+                                </span>
+                                <span class="ml-1 font-bold ${assign.grupo ? 'text-emerald-400' : 'text-slate-600'}">
+                                    ${assign.grupo ? 'G' + assign.grupo : ''}
+                                </span>
+                            </td>
 
                             <td class="p-3 text-center">
                                 <button onclick="openEditModal('${s.ra}')" title="Editar" class="text-blue-400 hover:text-blue-300 mr-3 transition-colors">
