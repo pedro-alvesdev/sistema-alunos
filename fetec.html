@@ -382,8 +382,12 @@ function hideLoading() {
 }
 
     function getStudentAssignment(ra) {
-    // Procura na lista de vínculos o RA do aluno E a disciplina do laboratório atual
-    return allAssignments.find(a => a.ra_aluno === ra && a.disciplina === currentLab) || { lado: null, grupo: null };
+    if (!ra) return { lado: null, grupo: null };
+    
+    return allAssignments.find(a => 
+        String(a.ra_aluno).trim() === String(ra).trim() && 
+        String(a.disciplina).toLowerCase() === String(currentLab).toLowerCase()
+    ) || { lado: null, grupo: null };
 }
 
     function switchScreen(s) {
@@ -1896,10 +1900,7 @@ async function massAssign(field, value) {
         const mSearch = s.nome_aluno.toLowerCase().includes(search);
         
         // --- BUSCA O VÍNCULO DO LAB ATUAL PARA O FILTRO ---
-        const assign = allAssignments.find(a => 
-            a.ra_aluno === s.ra && 
-            a.disciplina === currentLab
-        ) || { lado: null, grupo: null };
+       const assign = getStudentAssignment(s.ra);
 
         let mParte = true;
         if (parte === 'nao-atribuido') {
@@ -1978,10 +1979,7 @@ async function massAssign(field, value) {
                         
                         // BUSCA O VÍNCULO USANDO OS NOMES EXATOS DO SEU BANCO
                        // Localize este trecho dentro de renderStudentList e substitua:
-const assign = allAssignments.find(a => 
-    String(a.ra_aluno).trim() === String(s.ra).trim() && 
-    a.disciplina === currentLab
-) || { lado: null, grupo: null };
+const assign = getStudentAssignment(s.ra);
 
                         return `
                         <tr class="border-b border-slate-700 hover:bg-slate-700/30">
@@ -2131,11 +2129,7 @@ function quickSelectHalf() {
                 ${sortedList.map(s => {
                     // Busca o vínculo atual do aluno para o laboratório logado (Maker ou Ciências)
                    // Substitua dentro da função openAssignRoomModal()
-const assign = allAssignments.find(a => 
-    String(a.ra_aluno).trim() === String(s.ra).trim() && 
-    a.disciplina === currentLab
-) || { lado: null, grupo: null };
-
+const assign = getStudentAssignment(s.ra);
                     const hasData = assign.lado || assign.grupo;
 
                     return `
