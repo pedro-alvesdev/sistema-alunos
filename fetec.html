@@ -1794,14 +1794,13 @@ async function massAssign(field, value) {
     showLoading("Gravando alterações...");
 
     try {
-        const payloads = Array.from(selectedStudentsForAssign).map(id => {
-            // CORREÇÃO: Força a comparação transformando ambos em String
-            const s = allStudents.find(x => String(x.id) === String(id));
+        const payloads = Array.from(selectedStudentsForAssign).map(raSelecionado => {
+            // AGORA BUSCAMOS PELO RA, GARANTINDO QUE VAI ACHAR O ALUNO
+            const s = allStudents.find(x => String(x.ra).trim() === String(raSelecionado).trim());
             if (!s) return null;
 
-            const currentAssign = allAssignments.find(a => 
-                String(a.ra_aluno).trim() === String(s.ra).trim() && a.disciplina === currentLab
-            ) || { lado: null, grupo: null };
+            // Usa a função segura que criamos na etapa anterior
+            const currentAssign = getStudentAssignment(s.ra);
 
             return {
                 ra_aluno: String(s.ra).trim(),
@@ -1811,10 +1810,14 @@ async function massAssign(field, value) {
             };
         }).filter(p => p !== null);
 
-        // CORREÇÃO: Trava de segurança. Se o pacote estiver vazio, avisa o erro.
+        // A GRANDE TRAVA: Se a lista estiver vazia, ele cancela e te avisa!
         if (payloads.length === 0) {
-            throw new Error("Nenhum dado válido para envio. Verifique a seleção.");
+            alert("❌ Erro grave: Nenhum aluno válido foi encontrado para envio.");
+            hideLoading();
+            return;
         }
+
+        console.log("Enviando para o banco os seguintes dados:", payloads);
 
         const { error } = await _supabase
             .from('lab_assignments')
@@ -1826,7 +1829,7 @@ async function massAssign(field, value) {
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // Atualiza a tabela imediatamente após salvar
+        // Atualiza os dados na tela
         await refreshData(); 
 
     } catch (err) {
@@ -2084,13 +2087,12 @@ function quickSelect(status) {
     const checkboxes = document.querySelectorAll('.student-checkbox');
     checkboxes.forEach(cb => {
         cb.checked = status;
-        const id = cb.getAttribute('data-id');
-        if (status) selectedStudentsForAssign.add(id);
-        else selectedStudentsForAssign.delete(id);
+        const ra = cb.getAttribute('data-ra');
+        if (status) selectedStudentsForAssign.add(ra);
+        else selectedStudentsForAssign.delete(ra);
     });
 }
 
-// Função para selecionar a primeira metade da lista (ordem alfabética)
 function quickSelectHalf() {
     quickSelect(false); // Limpa tudo primeiro
     const checkboxes = document.querySelectorAll('.student-checkbox');
@@ -2098,8 +2100,8 @@ function quickSelectHalf() {
     
     for (let i = 0; i < half; i++) {
         checkboxes[i].checked = true;
-        const id = checkboxes[i].getAttribute('data-id');
-        selectedStudentsForAssign.add(id);
+        const ra = checkboxes[i].getAttribute('data-ra');
+        selectedStudentsForAssign.add(ra);
     }
 }
 
@@ -2135,9 +2137,9 @@ const assign = getStudentAssignment(s.ra);
                     return `
                         <div class="flex items-center gap-3 p-2 border-b border-slate-700/50 hover:bg-slate-700/30 transition-all">
                             <input type="checkbox" 
-                                   class="student-checkbox w-4 h-4 cursor-pointer accent-blue-500" 
-                                   data-id="${s.id}"
-                                   onchange="this.checked ? selectedStudentsForAssign.add('${s.id}') : selectedStudentsForAssign.delete('${s.id}')">
+       class="student-checkbox w-4 h-4 cursor-pointer accent-blue-500" 
+       data-ra="${s.ra}"
+       onchange="this.checked ? selectedStudentsForAssign.add('${s.ra}') : selectedStudentsForAssign.delete('${s.ra}')">
                             
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between flex-1 gap-1">
                                 <div class="flex flex-col">
