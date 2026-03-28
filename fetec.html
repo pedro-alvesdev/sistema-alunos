@@ -191,6 +191,10 @@ td {
 async function refreshData() {
     showLoading("Sincronizando Banco de Dados...");
     const progressEl = document.getElementById('loader-progress');
+  const { data: assignData } = await _supabase
+    .from('lab_assignments')
+    .select('*');
+allAssignments = assignData || [];
 
     try {
         // 1. BUSCA DE VÍNCULOS (LAB_ASSIGNMENTS)
@@ -1748,33 +1752,42 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
       reader.readAsArrayBuffer(file);
     }
 
-   async function handleStudentSubmit(e) {
+  async function handleStudentSubmit(e) {
     e.preventDefault();
     const ra = document.getElementById('m-ra').value;
+    
     try {
-        if (currentLab === 'maker') {
-            await _supabase.from('students').upsert({
+        // 1. Atualiza dados básicos do aluno
+        const { error: errStudent } = await _supabase
+            .from('students')
+            .upsert({
                 nome_aluno: document.getElementById('m-nome').value,
                 ra: ra,
                 sede: document.getElementById('m-sede').value,
                 serie: document.getElementById('m-serie').value,
                 nome_turma: document.getElementById('m-turma').value
             }, { onConflict: 'ra' });
-        }
 
-        const { error } = await _supabase.from('lab_assignments').upsert({
-            ra_aluno: ra,
-            disciplina: currentLab,
-            lado: document.getElementById('m-parte').value || null,
-            grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
-        }, { onConflict: 'ra_aluno,disciplina' });
+        if (errStudent) throw errStudent;
 
-        if (error) throw error;
-        showToast("Dados salvos!", "success");
+        // 2. Atualiza o vínculo específico deste laboratório
+        const { error: errAssign } = await _supabase
+            .from('lab_assignments')
+            .upsert({
+                ra_aluno: String(ra).trim(),
+                disciplina: currentLab,
+                lado: document.getElementById('m-parte').value || null,
+                grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
+            }, { onConflict: 'ra_aluno,disciplina' });
+
+        if (errAssign) throw errAssign;
+
+        showToast("✅ Alterações salvas!", "success");
         closeStudentModal();
         await refreshData();
     } catch (err) {
-        showToast("Erro ao salvar dados", "error");
+        console.error(err);
+        showToast("Erro ao salvar informações", "error");
     }
 }
 
@@ -1807,57 +1820,70 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
 async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) return showToast("Selecione alunos!", "error");
-    
-    showLoading(`Sincronizando ${currentLab.toUpperCase()}...`);
-    
+    // 1. Validações de segurança
+    if (selectedStudentsForAssign.size === 0) {
+        return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
+    }
+
+    if (!value && field === 'grupo') {
+        return alert("Por favor, insira um número de grupo válido.");
+    }
+
+    const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
+    if (!confirmacao) return;
+
+    // Mostra o overlay de carregamento (se você tiver a função showLoading)
+    if (typeof showLoading === "function") showLoading("Sincronizando com o servidor...");
+    else showToast("Atualizando banco de dados...", "info");
+
     try {
-        const payloads = Array.from(selectedStudentsForAssign).map(id => {
+        const ids = Array.from(selectedStudentsForAssign);
+        
+        // 2. Prepara o lote de dados (Payload)
+        const payloads = ids.map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca vínculo atual para preservar o outro campo (se mudar lado, mantém o grupo e vice-versa)
+            // Busca o vínculo atual na memória para não apagar o "Lado" se estiver editando o "Grupo"
+            // Importante: compara RA como String e remove espaços (trim)
             const currentAssign = allAssignments.find(a => 
-                String(a.ra_aluno).trim() === String(s.ra).trim() && a.disciplina === currentLab
-            );
+                String(a.ra_aluno).trim() === String(s.ra).trim() && 
+                a.disciplina === currentLab
+            ) || { lado: null, grupo: null };
 
             return {
                 ra_aluno: String(s.ra).trim(),
-                disciplina: currentLab,
-                lado: field === 'parte_sala' ? value : (currentAssign ? currentAssign.lado : null),
-                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : (currentAssign ? currentAssign.grupo : null)
+                disciplina: currentLab, // 'maker' ou 'ciencias'
+                // Se o campo alterado for 'parte_sala', usa o novo 'value', senão mantém o anterior
+                lado: field === 'parte_sala' ? value : currentAssign.lado,
+                // Se o campo for 'grupo', converte para número, senão mantém o anterior
+                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
             };
         }).filter(p => p !== null);
 
-        const { data, error } = await _supabase
+        // 3. Envia para o Supabase
+        // O parâmetro onConflict é a CHAVE para a sincronização entre dispositivos
+        const { error } = await _supabase
             .from('lab_assignments')
-            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' })
-            .select(); // O select() ajuda a garantir que recebemos o que foi salvo
+            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
         if (error) throw error;
 
-        // --- ATUALIZAÇÃO DA MEMÓRIA LOCAL ---
-        // Removemos os registros antigos desses alunos para o lab atual e inserimos os novos
-        const rasAtualizados = payloads.map(p => p.ra_aluno);
-        allAssignments = allAssignments.filter(a => 
-            !(rasAtualizados.includes(String(a.ra_aluno).trim()) && a.disciplina === currentLab)
-        );
-        allAssignments.push(...payloads);
-
-        showToast(`${payloads.length} alunos atualizados!`, "success");
+        // 4. Feedback e Limpeza
+        showToast(`✅ ${payloads.length} alunos sincronizados com sucesso!`, "success");
         
-        // Limpa seleção e fecha modal
-        selectedStudentsForAssign.clear();
-        closeAssignRoomModal();
+        selectedStudentsForAssign.clear(); 
+        if (typeof closeAssignRoomModal === "function") closeAssignRoomModal();
         
-        // Redesenha a interface imediatamente
-        applyFilters();
+        // 5. ATUALIZAÇÃO GLOBAL (Crucial para ver a mudança no ato)
+        // Isso força o app a ler o que acabou de ser gravado no banco
+        await refreshData(); 
 
     } catch (err) {
-        console.error("Erro na atribuição:", err);
-        showToast("Erro ao salvar no banco.", "error");
+        console.error("Erro na sincronização:", err);
+        alert("Erro ao salvar no banco de dados: " + err.message);
     } finally {
-        hideLoading();
+        if (typeof hideLoading === "function") hideLoading();
     }
 }
 
