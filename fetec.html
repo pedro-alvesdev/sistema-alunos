@@ -1791,7 +1791,8 @@ async function massAssign(field, value) {
 
     try {
         const payloads = Array.from(selectedStudentsForAssign).map(id => {
-            const s = allStudents.find(x => x.id === id);
+            // CORREÇÃO: Força a comparação transformando ambos em String
+            const s = allStudents.find(x => String(x.id) === String(id));
             if (!s) return null;
 
             const currentAssign = allAssignments.find(a => 
@@ -1799,12 +1800,17 @@ async function massAssign(field, value) {
             ) || { lado: null, grupo: null };
 
             return {
-                ra_aluno: String(s.ra).trim(), // Força String
+                ra_aluno: String(s.ra).trim(),
                 disciplina: currentLab,
                 lado: field === 'parte_sala' ? value : currentAssign.lado,
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
             };
         }).filter(p => p !== null);
+
+        // CORREÇÃO: Trava de segurança. Se o pacote estiver vazio, avisa o erro.
+        if (payloads.length === 0) {
+            throw new Error("Nenhum dado válido para envio. Verifique a seleção.");
+        }
 
         const { error } = await _supabase
             .from('lab_assignments')
@@ -1816,10 +1822,11 @@ async function massAssign(field, value) {
         selectedStudentsForAssign.clear();
         closeAssignRoomModal();
         
-        // AGORA RECARREGAMOS PARA SINCRONIZAR A VARIÁVEL GLOBAL
+        // Atualiza a tabela imediatamente após salvar
         await refreshData(); 
 
     } catch (err) {
+        console.error("Erro na atribuição:", err);
         alert("Erro ao salvar: " + err.message);
     } finally {
         hideLoading();
@@ -2123,10 +2130,11 @@ function quickSelectHalf() {
             <div id="check-list-container" class="space-y-1">
                 ${sortedList.map(s => {
                     // Busca o vínculo atual do aluno para o laboratório logado (Maker ou Ciências)
-                    const assign = allAssignments.find(a => 
-                        a.ra_aluno === s.ra && 
-                        a.disciplina === currentLab
-                    ) || { lado: null, grupo: null };
+                   // Substitua dentro da função openAssignRoomModal()
+const assign = allAssignments.find(a => 
+    String(a.ra_aluno).trim() === String(s.ra).trim() && 
+    a.disciplina === currentLab
+) || { lado: null, grupo: null };
 
                     const hasData = assign.lado || assign.grupo;
 
