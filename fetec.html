@@ -191,93 +191,57 @@ td {
 async function refreshData() {
     showLoading("Sincronizando Banco de Dados...");
     const progressEl = document.getElementById('loader-progress');
-  const { data: assignData } = await _supabase
-    .from('lab_assignments')
-    .select('*');
-allAssignments = assignData || [];
 
     try {
         // 1. BUSCA DE VÍNCULOS (LAB_ASSIGNMENTS)
-        // Buscamos primeiro os grupos para garantir que, ao carregar o aluno, o grupo já esteja na memória
         progressEl.innerText = "Buscando grupos e lados...";
         const { data: assignData, error: assignError } = await _supabase
             .from('lab_assignments')
             .select('*');
 
-        if (assignError) {
-            console.error("Erro ao buscar vínculos:", assignError);
-            showToast("Erro ao carregar grupos", "error");
-        } else {
-            // Atualiza a variável global com os dados mais recentes do servidor
-            allAssignments = assignData || [];
-        }
+        if (assignError) throw assignError;
+        allAssignments = assignData || []; // ÚNICA ATRIBUIÇÃO NECESSÁRIA
 
-        // 2. BUSCA DE ALUNOS (PAGINAÇÃO PARA > 1000 ALUNOS)
+        // 2. BUSCA DE ALUNOS (PAGINAÇÃO)
         let allFetchedStudents = [];
         let page = 0;
         const pageSize = 1000;
         let lastCount = 0;
 
-        progressEl.innerText = "Carregando lista de alunos...";
-        
         do {
             const { data, error } = await _supabase
                 .from('students')
                 .select('*')
                 .range(page * pageSize, (page + 1) * pageSize - 1);
 
-            if (error) {
-                console.error("Erro Supabase Alunos:", error);
-                break; 
-            }
-
-            if (!data) break;
-
+            if (error) throw error;
             allFetchedStudents = allFetchedStudents.concat(data);
             lastCount = data.length;
             page++;
-
             progressEl.innerText = `Alunos carregados: ${allFetchedStudents.length}`;
         } while (lastCount === pageSize);
 
         allStudents = allFetchedStudents;
 
-        // 3. BUSCA DE FREQUÊNCIA (DATA SELECIONADA)
-        progressEl.innerText = "Sincronizando chamadas...";
+        // 3. BUSCA DE FREQUÊNCIA
         const dKey = selectedDate.toISOString().split('T')[0];
-        const { data: attData, error: attError } = await _supabase
+        const { data: attData } = await _supabase
             .from('attendance')
             .select('*')
-            .eq('data_presenca', dKey);
-
-        if (!attError) {
-            allAttendances = attData || [];
-        }
+                .eq('data_presenca', dKey);
+        allAttendances = attData || [];
 
         // 4. ATUALIZAÇÃO DA INTERFACE
-        // Força a re-filtragem baseada nos novos dados que acabaram de chegar do banco
-        progressEl.innerText = "Renderizando painel...";
-        
-        if (currentScreen === 'management') {
-            applyFilters(); 
-        } else if (currentScreen === 'attendance') {
-            applyAttendanceFilters();
-        } else if (currentScreen === 'evaluation') {
-            applyEvalList();
-        } else if (currentScreen === 'results') {
-            generateRanking();
-        }
+        if (currentScreen === 'management') applyFilters(); 
+        else if (currentScreen === 'attendance') applyAttendanceFilters();
+        else if (currentScreen === 'evaluation') applyEvalList();
 
         showToast("Sincronização concluída!", "success");
-
     } catch (err) {
-        console.error("Erro crítico no refreshData:", err);
-        showToast("Falha na conexão com o servidor", "error");
+        console.error("Erro crítico:", err);
+        showToast("Falha na sincronização", "error");
     } finally {
-        // Delay suave para o usuário perceber que terminou
-        setTimeout(() => {
-            hideLoading();
-        }, 800);
+        setTimeout(() => hideLoading(), 500);
     }
 }
 
@@ -1820,70 +1784,45 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 
    // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
 async function massAssign(field, value) {
-    // 1. Validações de segurança
-    if (selectedStudentsForAssign.size === 0) {
-        return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
-    }
+    if (selectedStudentsForAssign.size === 0) return alert("Selecione alunos!");
+    if (!value && field === 'grupo') return alert("Insira um grupo!");
 
-    if (!value && field === 'grupo') {
-        return alert("Por favor, insira um número de grupo válido.");
-    }
-
-    const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
-    if (!confirmacao) return;
-
-    // Mostra o overlay de carregamento (se você tiver a função showLoading)
-    if (typeof showLoading === "function") showLoading("Sincronizando com o servidor...");
-    else showToast("Atualizando banco de dados...", "info");
+    showLoading("Gravando alterações...");
 
     try {
-        const ids = Array.from(selectedStudentsForAssign);
-        
-        // 2. Prepara o lote de dados (Payload)
-        const payloads = ids.map(id => {
+        const payloads = Array.from(selectedStudentsForAssign).map(id => {
             const s = allStudents.find(x => x.id === id);
             if (!s) return null;
 
-            // Busca o vínculo atual na memória para não apagar o "Lado" se estiver editando o "Grupo"
-            // Importante: compara RA como String e remove espaços (trim)
             const currentAssign = allAssignments.find(a => 
-                String(a.ra_aluno).trim() === String(s.ra).trim() && 
-                a.disciplina === currentLab
+                String(a.ra_aluno).trim() === String(s.ra).trim() && a.disciplina === currentLab
             ) || { lado: null, grupo: null };
 
             return {
-                ra_aluno: String(s.ra).trim(),
-                disciplina: currentLab, // 'maker' ou 'ciencias'
-                // Se o campo alterado for 'parte_sala', usa o novo 'value', senão mantém o anterior
+                ra_aluno: String(s.ra).trim(), // Força String
+                disciplina: currentLab,
                 lado: field === 'parte_sala' ? value : currentAssign.lado,
-                // Se o campo for 'grupo', converte para número, senão mantém o anterior
                 grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
             };
         }).filter(p => p !== null);
 
-        // 3. Envia para o Supabase
-        // O parâmetro onConflict é a CHAVE para a sincronização entre dispositivos
         const { error } = await _supabase
             .from('lab_assignments')
             .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
 
         if (error) throw error;
 
-        // 4. Feedback e Limpeza
-        showToast(`✅ ${payloads.length} alunos sincronizados com sucesso!`, "success");
+        showToast("✅ Salvo no banco!", "success");
+        selectedStudentsForAssign.clear();
+        closeAssignRoomModal();
         
-        selectedStudentsForAssign.clear(); 
-        if (typeof closeAssignRoomModal === "function") closeAssignRoomModal();
-        
-        // 5. ATUALIZAÇÃO GLOBAL (Crucial para ver a mudança no ato)
-        // Isso força o app a ler o que acabou de ser gravado no banco
+        // AGORA RECARREGAMOS PARA SINCRONIZAR A VARIÁVEL GLOBAL
         await refreshData(); 
 
     } catch (err) {
-        console.error("Erro na sincronização:", err);
-        alert("Erro ao salvar no banco de dados: " + err.message);
+        alert("Erro ao salvar: " + err.message);
     } finally {
-        if (typeof hideLoading === "function") hideLoading();
+        hideLoading();
     }
 }
 
@@ -2031,7 +1970,8 @@ async function massAssign(field, value) {
                     .map((s, index) => {
                         
                         // BUSCA O VÍNCULO USANDO OS NOMES EXATOS DO SEU BANCO
-                        const assign = allAssignments.find(a => 
+                       // Localize este trecho dentro de renderStudentList e substitua:
+const assign = allAssignments.find(a => 
     String(a.ra_aluno).trim() === String(s.ra).trim() && 
     a.disciplina === currentLab
 ) || { lado: null, grupo: null };
