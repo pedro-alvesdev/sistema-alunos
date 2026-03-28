@@ -1819,11 +1819,13 @@ async function massAssign(field, value) {
 
         console.log("Enviando para o banco os seguintes dados:", payloads);
 
-        const { error } = await _supabase
+        const { data, error } = await _supabase
             .from('lab_assignments')
-            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' });
+            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' })
+            .select(); // <--- ADICIONE ESTA LINHA AQUI!
 
         if (error) throw error;
+      console.log("📥 O que o Supabase REALMENTE gravou:", data);
 
         showToast("✅ Salvo no banco!", "success");
         selectedStudentsForAssign.clear();
