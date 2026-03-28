@@ -2218,6 +2218,22 @@ const assign = allAssignments.find(a =>
     // 5. Opcional: Força um recarregamento da página para garantir limpeza total do cache
     // window.location.reload(); 
 }
+    // FERRAMENTA DE DIAGNÓSTICO
+async function debugSupabase() {
+    console.log("🔍 1. Buscando dados BRUTOS direto da tabela lab_assignments...");
+    
+    const { data, error } = await _supabase.from('lab_assignments').select('*');
+    
+    if (error) {
+        console.error("❌ ERRO AO LER SUPABASE:", error.message);
+    } else {
+        console.log("✅ DADOS NO SUPABASE:");
+        console.table(data);
+    }
+
+    console.log("🧠 2. O que o aplicativo tem na memória agora (allAssignments):", allAssignments);
+    console.log("👥 3. IDs dos alunos que você selecionou no Modal:", Array.from(selectedStudentsForAssign));
+}
     function showToast(m, t) { 
         const toast = document.createElement('div');
         toast.className = `toast ${t === 'success' ? 'bg-green-600' : 'bg-blue-600'}`;
