@@ -471,17 +471,23 @@ async function updateDateFromPicker(val) {
                 </div>
                 
                 <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 shadow-xl no-print">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         <div>
-                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Sede</label>
-                            <select id="res-sede" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Sede</label>
+                            <select id="res-sede" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
                         </div>
                         <div>
-                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Série</label>
-                            <select id="res-serie" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Série</label>
+                            <select id="res-serie" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
                         </div>
                         <div>
-                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Filtrar Lado</label>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+                            <select id="res-turma" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todas as Turmas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
                             <select id="res-lado" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
                                 <option value="todos">Todos os Lados</option>
                                 <option value="A">Lado A</option>
@@ -489,8 +495,8 @@ async function updateDateFromPicker(val) {
                             </select>
                         </div>
                         <div class="flex items-end gap-2">
-                            <button onclick="window.print()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-blue-900/20">
-                                🖨️ Imprimir Relatório
+                            <button onclick="window.print()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-blue-900/20">
+                                🖨️ Imprimir
                             </button>
                         </div>
                     </div>
@@ -505,26 +511,65 @@ async function updateDateFromPicker(val) {
             </div>
         </div>`;
 
-    // 1. Extrai valores únicos para popular os filtros
-    const sedes = [...new Set(allStudents.map(s => s.sede))].filter(Boolean).sort();
-    const series = [...new Set(allStudents.map(s => s.serie))].filter(Boolean).sort();
-    
-    const sedeSelect = document.getElementById('res-sede');
-    const serieSelect = document.getElementById('res-serie');
+    // Chama a nova função que cria a cascata de filtros
+    populateInitialResultFilters();
+}
 
-    // 2. Preenche Sede e Série
-    if (sedeSelect) sedeSelect.innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
-    if (serieSelect) serieSelect.innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    function populateInitialResultFilters() {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].filter(Boolean).sort();
+    const sedeSelect = document.getElementById('res-sede');
     
-    // 3. Dispara a geração inicial do ranking com um pequeno delay para garantir que o DOM está pronto
-    setTimeout(() => {
-        generateRanking();
-    }, 100);
+    if (sedeSelect) {
+        sedeSelect.innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+    
+    updateResultFilters(); // Popula séries e turmas com base na primeira sede
+    setTimeout(() => generateRanking(), 100);
+}
+
+function updateResultFilters() {
+    const sedeSel = document.getElementById('res-sede');
+    const serieSel = document.getElementById('res-serie');
+    const turmaSel = document.getElementById('res-turma');
+
+    if (!sedeSel || !serieSel || !turmaSel) return;
+
+    const s = sedeSel.value;
+    const sr = serieSel.value;
+    const turmaAtual = turmaSel.value;
+
+    // 1. Filtra alunos pela sede
+    let listaFiltrada = allStudents.filter(x => x.sede === s);
+    const series = [...new Set(listaFiltrada.map(x => x.serie))].filter(Boolean).sort();
+    
+    // Atualiza o select de Séries
+    const serieAnterior = sr;
+    serieSel.innerHTML = series.map(x => `<option value="${x}">${x}</option>`).join('');
+    if (series.includes(serieAnterior)) {
+        serieSel.value = serieAnterior;
+    } else if (series.length > 0) {
+        serieSel.value = series[0];
+    }
+
+    // 2. Filtra alunos pela Sede E Série atualizadas
+    const srAtual = serieSel.value;
+    listaFiltrada = listaFiltrada.filter(x => x.serie === srAtual);
+
+    // Extrai e atualiza as Turmas
+    const turmas = [...new Set(listaFiltrada.map(x => x.nome_turma))].filter(Boolean).sort();
+    
+    turmaSel.innerHTML = '<option value="todos">Todas as Turmas</option>' + 
+                         turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+                         
+    if (turmas.includes(turmaAtual)) {
+        turmaSel.value = turmaAtual;
+    }
 }
 
 async function generateRanking() {
     const sede = document.getElementById('res-sede').value;
     const serie = document.getElementById('res-serie').value;
+    const turmaFiltro = document.getElementById('res-turma').value; // NOVO FILTRO
     const ladoFiltro = document.getElementById('res-lado').value;
     const container = document.getElementById('results-content');
 
@@ -537,17 +582,24 @@ async function generateRanking() {
         </div>`;
 
     try {
-        // 1. Busca avaliações base do banco
-        let { data: evals, error } = await _supabase
+        // Monta a query base com Sede e Série
+        let query = _supabase
             .from('evaluations_fetec')
             .select('*')
             .eq('sede', sede)
             .eq('serie', serie)
             .eq('disciplina', currentLab);
 
+        // Aplica o filtro direto no Supabase se uma turma específica for escolhida
+        if (turmaFiltro !== 'todos') {
+            query = query.eq('nome_turma', turmaFiltro);
+        }
+
+        let { data: evals, error } = await query;
+
         if (error) throw error;
         if (!evals || evals.length === 0) {
-            container.innerHTML = `<p class="text-center py-20 text-slate-500 italic">Nenhuma avaliação encontrada para esta sede/série.</p>`;
+            container.innerHTML = `<p class="text-center py-20 text-slate-500 italic">Nenhuma avaliação encontrada para os filtros selecionados.</p>`;
             return;
         }
 
