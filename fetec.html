@@ -188,19 +188,33 @@ td {
     };
 
 // --- CARREGAMENTO DE DADOS (VERSÃO SINCRONIZADA TOTAL) ---
+// --- CARREGAMENTO DE DADOS (VERSÃO SINCRONIZADA TOTAL E SEM LIMITES) ---
 async function refreshData() {
     showLoading("Sincronizando Banco de Dados...");
     const progressEl = document.getElementById('loader-progress');
 
     try {
-        // 1. BUSCA DE VÍNCULOS (LAB_ASSIGNMENTS)
+        // 1. BUSCA DE VÍNCULOS (LAB_ASSIGNMENTS) - COM PAGINAÇÃO INFINITA
         progressEl.innerText = "Buscando grupos e lados...";
-        const { data: assignData, error: assignError } = await _supabase
-            .from('lab_assignments')
-            .select('*');
+        let allFetchedAssignments = [];
+        let pageAssign = 0;
+        const pageSizeAssign = 1000;
+        let lastAssignCount = 0;
 
-        if (assignError) throw assignError;
-        allAssignments = assignData || []; // ÚNICA ATRIBUIÇÃO NECESSÁRIA
+        do {
+            const { data: assignData, error: assignError } = await _supabase
+                .from('lab_assignments')
+                .select('*')
+                .range(pageAssign * pageSizeAssign, (pageAssign + 1) * pageSizeAssign - 1);
+
+            if (assignError) throw assignError;
+            
+            allFetchedAssignments = allFetchedAssignments.concat(assignData);
+            lastAssignCount = assignData.length;
+            pageAssign++;
+        } while (lastAssignCount === pageSizeAssign);
+
+        allAssignments = allFetchedAssignments; // ATRIBUIÇÃO DOS VÍNCULOS COMPLETOS
 
         // 2. BUSCA DE ALUNOS (PAGINAÇÃO)
         let allFetchedStudents = [];
@@ -228,7 +242,7 @@ async function refreshData() {
         const { data: attData } = await _supabase
             .from('attendance')
             .select('*')
-                .eq('data_presenca', dKey);
+            .eq('data_presenca', dKey);
         allAttendances = attData || [];
 
         // 4. ATUALIZAÇÃO DA INTERFACE
