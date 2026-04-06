@@ -767,9 +767,10 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
     renderStudentList();
 }
 
-    function renderEvalCard(titulo, ra, grupo, membros = "") {
-    const id = ra || `g${grupo}`;
-    // Definimos os 3 novos critérios
+    function renderEvalCard(titulo, ra, grupo, lado, membros = "") {
+    // Agora o ID do card junta o grupo e o lado para não dar conflito!
+    const id = ra || `g${grupo}-${lado}`; 
+    
     const criterios = [
         { id: 'Oralidade', label: 'Oralidade' },
         { id: 'Postura', label: 'Postura' },
@@ -814,7 +815,7 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
                     <input type="checkbox" id="apto-${id}" class="w-5 h-5 accent-emerald-500 cursor-pointer">
                 </div>
 
-                <button onclick="saveFetecEval('${ra}', '${grupo}', '${id}')" 
+                <button onclick="saveFetecEval('${ra}', '${grupo}', '${lado}', '${id}')" 
                     class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-900/20 text-sm uppercase tracking-widest">
                     💾 Salvar Avaliação
                 </button>
@@ -878,21 +879,35 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
             .map(aluno => {
                 const infoGrupo = aluno.currentGrupo ? `Grupo ${aluno.currentGrupo}` : 'Sem Grupo';
                 const labelLado = aluno.currentLado ? `Lado ${aluno.currentLado}` : 'S/L';
-                return renderEvalCard(`${aluno.nome_aluno}`, aluno.ra, aluno.currentGrupo, `${labelLado} | ${infoGrupo}`);
+                // Enviamos currentLado como quarto parâmetro
+                return renderEvalCard(`${aluno.nome_aluno}`, aluno.ra, aluno.currentGrupo, aluno.currentLado, `${labelLado} | ${infoGrupo}`);
             })
             .join('');
     } else {
-        const gruposNoFiltro = [...new Set(listaFiltrada.map(s => s.currentGrupo))].filter(g => g).sort((a, b) => a - b);
+        // Agrupamos usando Lado E Grupo para isolar completamente
+        const gruposLado = {};
         
-        if (gruposNoFiltro.length === 0 && currentLab === 'ciencias') {
+        listaFiltrada.forEach(s => {
+            if (!s.currentGrupo || !s.currentLado) return; 
+            const key = `${s.currentLado}-${s.currentGrupo}`;
+            
+            if (!gruposLado[key]) {
+                gruposLado[key] = { lado: s.currentLado, grupo: s.currentGrupo, nomes: [] };
+            }
+            gruposLado[key].nomes.push(s.nome_aluno);
+        });
+
+        const chavesOrdenadas = Object.keys(gruposLado).sort();
+        
+        if (chavesOrdenadas.length === 0 && currentLab === 'ciencias') {
              cont.innerHTML = `<p class="col-span-full text-center py-10 text-slate-500 italic">Aguardando atribuição de grupos em Ciências...</p>`;
              return;
         }
 
-        cont.innerHTML = gruposNoFiltro.map(g => {
-            const integrantes = listaFiltrada.filter(s => s.currentGrupo === g).map(s => s.nome_aluno).join(', ');
-            const exLado = listaFiltrada.find(s => s.currentGrupo === g)?.currentLado || '?';
-            return renderEvalCard(`LADO ${exLado} - GRUPO ${g}`, null, g, integrantes);
+        cont.innerHTML = chavesOrdenadas.map(k => {
+            const g = gruposLado[k];
+            const integrantes = g.nomes.sort().join(', ');
+            return renderEvalCard(`LADO ${g.lado} - GRUPO ${g.grupo}`, null, g.grupo, g.lado, integrantes);
         }).join('');
     }
     
@@ -903,9 +918,8 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
             calculateLiveMedia(cardId);
         });
     }, 200);
-}
 
-   async function saveFetecEval(ra, grupo, cardId) {
+   async function saveFetecEval(ra, grupo, ladoCard, cardId) {
     // 1. CAPTURA E VALIDAÇÃO DO AVALIADOR
     const profInput = document.getElementById('evaluator-name');
     const prof = profInput ? profInput.value.trim() : "";
@@ -948,16 +962,18 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         return isNaN(valor) ? 0 : valor;
     };
 
-    // 5. MONTAGEM DOS DADOS (Contexto atual da tela)
-    const ladoSelecionado = document.getElementById('ev-lado').value;
+    // 5. MONTAGEM DOS DADOS
     const sedeAtual = document.getElementById('ev-sede').value;
     const serieAtual = document.getElementById('ev-serie').value;
     const turmaAtual = document.getElementById('ev-turma').value;
+    
+    // Pega o lado direto do CARD e não mais do select global
+    const ladoReal = (ladoCard && ladoCard !== 'null' && ladoCard !== 'undefined') ? ladoCard : null;
 
     const payload = {
         ra_aluno: (ra && ra !== 'null' && ra !== 'undefined') ? ra : null,
         grupo: (grupo && grupo !== 'null' && grupo !== 'undefined') ? parseInt(grupo) : null,
-        lado: ladoSelecionado,
+        lado: ladoReal, // <-- Correção principal aqui
         nome_professor: prof,
         disciplina: currentLab,
         data_eval: new Date().toISOString().split('T')[0],
@@ -995,11 +1011,9 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         btn.innerText = "🔄 Atualizar Nota";
         btn.classList.replace('bg-emerald-600', 'bg-blue-600');
         
-        // Trava o nome do professor para evitar erros acidentais
         profInput.readOnly = true;
         profInput.classList.add('bg-slate-800', 'text-slate-400');
 
-        // Foca automaticamente no próximo card da lista
         focusNextCard(cardId);
 
     } catch (error) {
@@ -1127,17 +1141,17 @@ function loadPersistentEvalFilters() {
         .eq('sede', sede)
         .eq('nome_turma', turma)
         .eq('nome_professor', prof)
-        .eq('disciplina', currentLab); // Filtro importante para não misturar labs
+        .eq('disciplina', currentLab); 
 
     if (error) return;
 
     if (data && data.length > 0) {
         data.forEach(eval => {
-            const id = eval.ra_aluno || `g${eval.grupo}`;
+            // Agora o ID inclui o lado na hora de puxar os dados
+            const id = eval.ra_aluno || `g${eval.grupo}-${eval.lado}`;
             const card = document.getElementById(`card-${id}`);
             
             if (card) {
-                // Preenche apenas os 3 campos que existem agora
                 const inputO = document.getElementById(`nota-${id}-Oralidade`);
                 const inputP = document.getElementById(`nota-${id}-Postura`);
                 const inputD = document.getElementById(`nota-${id}-Dominio`);
