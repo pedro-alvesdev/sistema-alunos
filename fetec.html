@@ -450,7 +450,7 @@ async function updateDateFromPicker(val) {
     }
 }
 
-    async function renderResultsScreen() {
+   async function renderResultsScreen() {
     currentScreen = 'results';
     const app = document.getElementById('app');
     
@@ -471,7 +471,7 @@ async function updateDateFromPicker(val) {
                 </div>
                 
                 <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 shadow-xl no-print">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         <div>
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Sede</label>
                             <select id="res-sede" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
@@ -482,7 +482,7 @@ async function updateDateFromPicker(val) {
                         </div>
                         <div>
                             <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
-                            <select id="res-turma" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                            <select id="res-turma" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
                                 <option value="todos">Todas as Turmas</option>
                             </select>
                         </div>
@@ -494,10 +494,17 @@ async function updateDateFromPicker(val) {
                                 <option value="B">Lado B</option>
                             </select>
                         </div>
-                        <div class="flex items-end gap-2">
-                            <button onclick="window.print()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-blue-900/20">
-                                🖨️ Imprimir
-                            </button>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Grupo</label>
+                            <select id="res-grupo" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todos os Grupos</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            // Substitua o botão existente por este:
+<button onclick="exportResultsToExcel()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-emerald-900/20">
+    📊 Exportar
+</button>
                         </div>
                     </div>
                 </div>
@@ -511,7 +518,6 @@ async function updateDateFromPicker(val) {
             </div>
         </div>`;
 
-    // Chama a nova função que cria a cascata de filtros
     populateInitialResultFilters();
 }
 
@@ -531,12 +537,14 @@ function updateResultFilters() {
     const sedeSel = document.getElementById('res-sede');
     const serieSel = document.getElementById('res-serie');
     const turmaSel = document.getElementById('res-turma');
+    const grupoSel = document.getElementById('res-grupo');
 
-    if (!sedeSel || !serieSel || !turmaSel) return;
+    if (!sedeSel || !serieSel || !turmaSel || !grupoSel) return;
 
     const s = sedeSel.value;
     const sr = serieSel.value;
     const turmaAtual = turmaSel.value;
+    const grupoAtual = grupoSel.value;
 
     // 1. Filtra alunos pela sede
     let listaFiltrada = allStudents.filter(x => x.sede === s);
@@ -564,13 +572,32 @@ function updateResultFilters() {
     if (turmas.includes(turmaAtual)) {
         turmaSel.value = turmaAtual;
     }
+    
+    // 3. Atualiza os Grupos baseados na turma selecionada
+    let listaTurma = listaFiltrada;
+    if (turmaSel.value !== 'todos') {
+        listaTurma = listaFiltrada.filter(x => x.nome_turma === turmaSel.value);
+    }
+    
+    const grupos = [...new Set(listaTurma.map(x => {
+        const assign = getStudentAssignment(x.ra);
+        return assign.grupo;
+    }))].filter(Boolean).sort((a,b) => a - b);
+    
+    grupoSel.innerHTML = '<option value="todos">Todos os Grupos</option>' + 
+                         grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
+                         
+    if (grupos.map(String).includes(String(grupoAtual))) {
+        grupoSel.value = grupoAtual;
+    }
 }
 
 async function generateRanking() {
     const sede = document.getElementById('res-sede').value;
     const serie = document.getElementById('res-serie').value;
-    const turmaFiltro = document.getElementById('res-turma').value; // NOVO FILTRO
+    const turmaFiltro = document.getElementById('res-turma').value;
     const ladoFiltro = document.getElementById('res-lado').value;
+    const grupoFiltro = document.getElementById('res-grupo').value; // NOVO FILTRO
     const container = document.getElementById('results-content');
 
     if (!sede || !serie) return;
@@ -582,15 +609,11 @@ async function generateRanking() {
         </div>`;
 
     try {
-        // Monta a query base com Sede e Série
-        let query = _supabase
-            .from('evaluations_fetec')
-            .select('*')
+        let query = _supabase.from('evaluations_fetec').select('*')
             .eq('sede', sede)
             .eq('serie', serie)
             .eq('disciplina', currentLab);
 
-        // Aplica o filtro direto no Supabase se uma turma específica for escolhida
         if (turmaFiltro !== 'todos') {
             query = query.eq('nome_turma', turmaFiltro);
         }
@@ -603,39 +626,44 @@ async function generateRanking() {
             return;
         }
 
-        // --- FILTRO DE SEGURANÇA: Respeita o Lado selecionado na tela ---
+        // --- FILTROS DE LADO E GRUPO APLICADOS NOS DADOS OBTIDOS ---
         if (ladoFiltro !== 'todos') {
             evals = evals.filter(e => e.lado === ladoFiltro);
+        }
+        if (grupoFiltro !== 'todos') {
+            evals = evals.filter(e => String(e.grupo) === String(grupoFiltro));
         }
 
         const processado = {};
 
         evals.forEach(e => {
-            // A chave agora inclui a TURMA para não misturar alunos de salas diferentes no ranking
             const key = e.ra_aluno ? e.ra_aluno : `${e.nome_turma}-${e.lado}-G${e.grupo}`;
 
             if (!processado[key]) {
                 let identificacao = "";
                 
                 if (e.ra_aluno) {
-                    const aluno = allStudents.find(s => s.ra === e.ra_aluno);
+                    const aluno = allStudents.find(s => String(s.ra) === String(e.ra_aluno));
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // Busca integrantes específicos deste grupo/lado/turma
-                    const rasNoGrupo = allAssignments
-                        .filter(a => a.grupo == e.grupo && a.lado === e.lado && a.disciplina === currentLab)
-                        .map(a => a.ra_aluno);
-
-                    const integrantes = allStudents
-                        .filter(s => rasNoGrupo.includes(s.ra) && s.nome_turma === e.nome_turma)
-                        .map(s => s.nome_aluno)
-                        .sort()
-                        .join(', ');
+                    // AQUI ESTÁ A CORREÇÃO MÁGICA PARA NÃO MISTURAR ALUNOS:
+                    // 1º: Pega apenas os alunos DESTA sala exata
+                    const alunosDaTurma = allStudents.filter(s => 
+                        s.sede === e.sede && 
+                        s.serie === e.serie && 
+                        s.nome_turma === e.nome_turma
+                    );
+                    
+                    // 2º: Dentro desta sala, quem é deste grupo e lado?
+                    const integrantes = alunosDaTurma.filter(s => {
+                        const assign = getStudentAssignment(s.ra);
+                        return String(assign.grupo) === String(e.grupo) && assign.lado === e.lado;
+                    }).map(s => s.nome_aluno).sort().join(', ');
                     
                     identificacao = `
                         <div class="flex flex-col">
-                            <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado} - Grupo ${e.grupo}</span>
-                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Alunos não vinculados'}</span>
+                            <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado || '?'} - Grupo ${e.grupo || '?'}</span>
+                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Nenhum aluno atribuído'}</span>
                         </div>`;
                 }
 
@@ -648,7 +676,6 @@ async function generateRanking() {
                 };
             }
             
-            // Soma as 3 notas e divide por 3
             const n1 = parseFloat(e.nota_oralidade) || 0;
             const n2 = parseFloat(e.nota_postura) || 0;
             const n3 = parseFloat(e.nota_dominio) || 0; 
@@ -657,14 +684,13 @@ async function generateRanking() {
             if (e.apto_fetec) processado[key].apto = true;
         });
 
-        // 2. Calcula média final e ordena
         const rankingFinal = Object.values(processado).map(obj => {
             const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
             obj.mediaFinal = soma / obj.avaliacoes.length;
             return obj;
         }).sort((a, b) => b.mediaFinal - a.mediaFinal);
+      window.lastRankingData = rankingFinal;
 
-        // 3. Renderiza as tabelas separadas
         const listaAptos = rankingFinal.filter(r => r.apto === true);
         const listaGeral = rankingFinal.filter(r => r.apto !== true);
 
@@ -753,9 +779,10 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
               <div class="flex justify-between items-center mb-6">
                 <h2 class="font-semibold text-white text-xl uppercase">👥 Lista ${currentLab} (<span id="student-count">0</span>)</h2>
                 <div class="flex gap-2">
-                    <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">🏫 Atribuir</button>
-                    ${isMaker ? `<button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Aluno</button>` : ''}
-                </div>
+    <button onclick="exportStudentListToExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">📊 Exportar</button>
+    <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">🏫 Atribuir</button>
+    ${isMaker ? `<button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Aluno</button>` : ''}
+</div>
               </div>
               <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
             </div>
@@ -911,14 +938,11 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
         }).join('');
     }
     
-    setTimeout(() => {
+   setTimeout(() => {
+       
         loadExistingEvaluations(); 
-        document.querySelectorAll('[id^="card-"]').forEach(card => {
-            const cardId = card.id.replace('card-', '');
-            calculateLiveMedia(cardId);
-        });
     }, 200);
-    }
+}
 
    async function saveFetecEval(ra, grupo, ladoCard, cardId) {
     // 1. CAPTURA E VALIDAÇÃO DO AVALIADOR
@@ -1113,7 +1137,7 @@ function loadPersistentEvalFilters() {
             <div class="bg-slate-900 p-3 sm:p-4 rounded-xl border border-slate-700 flex justify-between items-center gap-2">
         
                 <h2 class="text-white font-bold text-xl">✅ Lista de Frequência (<span id="attendance-count">0</span>)</h2>
-                <button onclick="printAttendanceList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">🖨️ Imprimir Lista</button>
+                <button onclick="exportAttendanceToExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-lg font-bold transition-all">📊 Exportar</button>
               </div>
               <div id="attendance-list" class="space-y-3"></div>
             </div>
@@ -1168,6 +1192,10 @@ function loadPersistentEvalFilters() {
                 btn.innerText = "✅ Atualizar Avaliação";
                 btn.classList.replace('bg-emerald-600', 'bg-blue-600');
                 card.classList.add('border-blue-500/50');
+                
+                // 💡 A CORREÇÃO ESTÁ AQUI: 
+                // Dispara o cálculo da média logo após injetar as notas do banco!
+                calculateLiveMedia(id);
             }
         });
     }
@@ -1492,16 +1520,17 @@ function updateEvalFilters() {
     modal.classList.remove('hidden');
 
     try {
-        // 1. Identifica se a busca é por RA ou por Grupo Composto
-        const isGroup = key.includes('-G');
+        // 1. Identifica se a busca é por RA ou pela nossa nova chave de Grupo
+        const isGroup = key.includes('GRUPO|');
         let query = _supabase.from('evaluations_fetec').select('*').eq('disciplina', currentLab);
 
         if (isGroup) {
-            const parts = key.split('-'); // [Sede, Turma, Lado, GNum]
-            const sede = parts[0];
-            const turma = parts[1];
-            const lado = parts[2];
-            const grupoNum = parts[3].replace('G', '');
+            // Fatiamos a chave usando a barra vertical
+            const parts = key.split('|'); // ['GRUPO', Sede, Turma, Lado, GNum]
+            const sede = parts[1];
+            const turma = parts[2];
+            const lado = parts[3];
+            const grupoNum = parts[4];
 
             query = query.eq('sede', sede)
                          .eq('nome_turma', turma)
@@ -1568,7 +1597,7 @@ function updateEvalFilters() {
 
     } catch (err) {
         console.error("Erro no Histórico:", err);
-        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500 font-bold">Falha ao conectar com o banco de dados.</td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500 font-bold">Falha ao buscar os dados do histórico.</td></tr>`;
     }
 }
 
@@ -1666,93 +1695,90 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 }
 
     // --- FUNÇÕES DE IMPRESSÃO ---
-    function printStudentList() {
-        const win = window.open('', '_blank');
-        const html = `
-            <html>
-            <head>
-                <title>Lista de Alunos</title>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
-                    th { background: #f2f2f2; }
-                    h1 { text-align: center; }
-                </style>
-            </head>
-            <body>
-                <h1>Lista Geral de Alunos</h1>
-                <p>Total de alunos: ${filteredStudents.length}</p>
-                // Dentro de printStudentList, altere a parte da tabela:
-<table>
-    <thead>
-        <tr><th>#</th><th>Nome</th><th>RA</th><th>Sede</th><th>Série</th><th>Turma</th><th>Lado/G</th></tr>
-    </thead>
-    <tbody>
-        ${filteredStudents.map((s, index) => `
-            <tr>
-                <td>${index + 1}</td>
-                <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.sede}</td>
-                <td>${s.serie}</td><td>${s.nome_turma}</td>
-                <td>${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
-            </tr>`).join('')}
-    </tbody>
-</table>
-                <script>window.print();<\/script>
-            </body>
-            </html>`;
-        win.document.write(html);
-        win.document.close();
+    // --- FUNÇÕES DE EXPORTAÇÃO PARA EXCEL ---
+
+function exportAttendanceToExcel() {
+    const dKey = selectedDate.toLocaleDateString('pt-BR');
+    const sede = document.getElementById('attendance-filter-sede')?.value || 'todos';
+    const serie = document.getElementById('attendance-filter-serie')?.value || 'todos';
+    const turno = document.getElementById('attendance-filter-turno')?.value || 'todos';
+
+    // Pega exatamente a lista que a tela está mostrando
+    const list = allStudents.filter(x => {
+        return (sede === 'todos' || x.sede === sede) && 
+               (serie === 'todos' || x.serie === serie) && 
+               (turno === 'todos' || x.nome_turma === turno);
+    }).sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno));
+
+    if (list.length === 0) return showToast("Nenhum dado para exportar", "error");
+
+    const excelData = list.map((s, index) => {
+        const att = allAttendances.find(a => a.ra === s.ra && a.data_presenca === selectedDate.toISOString().split('T')[0]);
+        const present = att ? att.presente : true;
+        return {
+            "Nº": index + 1,
+            "Nome do Aluno": s.nome_aluno,
+            "RA": s.ra,
+            "Turma": s.nome_turma,
+            "Sede": s.sede,
+            "Status": present ? "PRESENTE" : "AUSENTE"
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Frequencia");
+    XLSX.writeFile(wb, `Frequencia_${currentLab}_${dKey.replace(/\//g, '-')}.xlsx`);
+}
+
+function exportResultsToExcel() {
+    if (!window.lastRankingData || window.lastRankingData.length === 0) {
+        return showToast("Nenhum ranking para exportar!", "error");
     }
 
-    function printAttendanceList() {
-        const dKey = selectedDate.toLocaleDateString('pt-BR');
-        const win = window.open('', '_blank');
-        const html = `
-            <html>
-            <head>
-                <title>Frequência - ${dKey}</title>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
-                    th { background: #f2f2f2; }
-                    .status { font-weight: bold; }
-                    h1 { text-align: center; margin-bottom: 0; }
-                    .date { text-align: center; margin-top: 5px; color: #666; }
-                </style>
-            </head>
-            <body>
-                <h1>Relatório de Frequência</h1>
-                <p class="date">Data: ${dKey}</p>
-                <table>
-                    <thead>
-                        <tr><th>Nome</th><th>RA</th><th>Turma</th><th>Status</th></tr>
-                    </thead>
-                    <tbody>
-                        ${allStudents.filter(s => {
-                            // Filtra apenas os que estão visíveis na tela no momento da impressão
-                            const sede = document.getElementById('attendance-filter-sede')?.value || 'todos';
-                            const serie = document.getElementById('attendance-filter-serie')?.value || 'todos';
-                            const turno = document.getElementById('attendance-filter-turno')?.value || 'todos';
-                            return (sede === 'todos' || s.sede === sede) && (serie === 'todos' || s.serie === serie) && (turno === 'todos' || s.nome_turma === turno);
-                        }).sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(s => {
-                            const att = allAttendances.find(a => a.ra === s.ra && a.data_presenca === selectedDate.toISOString().split('T')[0]);
-                            const present = att ? att.presente : true;
-                            return `
-                                <tr>
-                                    <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.nome_turma}</td>
-                                    <td class="status">${present ? 'PRESENTE' : 'AUSENTE'}</td>
-                                </tr>`;
-                        }).join('')}
-                    </tbody>
-                </table>
-                <script>window.print();<\/script>
-            </body>
-            </html>`;
-        win.document.write(html);
-        win.document.close();
-    }
+    const excelData = window.lastRankingData.map((r, idx) => {
+        // Limpa o HTML injetado nos nomes dos grupos
+        const div = document.createElement('div');
+        div.innerHTML = r.nome;
+        const nomeLimpo = div.textContent || div.innerText || r.nome;
+
+        return {
+            "Classificação": (idx + 1) + "º",
+            "Equipe / Aluno": nomeLimpo.trim().replace(/\s+/g, ' '), // Remove quebras de linha
+            "Turma": r.turma,
+            "Média Final": parseFloat(r.mediaFinal.toFixed(2)),
+            "Status FETEC": r.apto ? "SELECIONADO" : "Classificação Geral"
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ranking");
+    XLSX.writeFile(wb, `Ranking_FETEC_${currentLab}.xlsx`);
+}
+
+function exportStudentListToExcel() {
+    if (filteredStudents.length === 0) return showToast("Nenhum dado para exportar", "error");
+
+    const excelData = filteredStudents.sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno)).map((s, index) => {
+        const assign = getStudentAssignment(s.ra);
+        return {
+            "Nº": index + 1,
+            "Nome do Aluno": s.nome_aluno,
+            "RA": s.ra,
+            "Sede": s.sede,
+            "Série": s.serie,
+            "Turma": s.nome_turma,
+            "Lado": assign.lado || "Sem Lado",
+            "Grupo": assign.grupo || "Sem Grupo"
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Alunos");
+    XLSX.writeFile(wb, `Lista_Alunos_${currentLab}.xlsx`);
+}
 
     // --- LÓGICA DE NEGÓCIO (SUPABASE) ---
 
