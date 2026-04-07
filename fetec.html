@@ -84,18 +84,58 @@ td {
     transition: opacity 0.5s ease;
 }
 
-.loader-spinner {
-    width: 50px;
-    height: 50px;
-    border: 5px solid #1e293b;
-    border-top: 5px solid #3b82f6; /* Azul Maker */
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
+/* Novo Loader Uiverse */
+.loader {
+  position: relative;
+  width: 120px;
+  height: 90px;
+  margin: 0 auto;
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.loader:before {
+  content: "";
+  position: absolute;
+  bottom: 30px;
+  left: 50px;
+  height: 30px;
+  width: 30px;
+  border-radius: 50%;
+  background: #3b82f6; /* Mudei para o seu Azul Maker para combinar com o layout */
+  animation: loading-bounce 0.5s ease-in-out infinite alternate;
+}
+
+.loader:after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 7px;
+  width: 45px;
+  border-radius: 4px;
+  box-shadow: 0 5px 0 #334155, -35px 50px 0 #334155, -70px 95px 0 #334155; /* Escureci os degraus para combinar com o fundo escuro do seu overlay */
+  animation: loading-step 1s ease-in-out infinite;
+}
+
+@keyframes loading-bounce {
+  0% { transform: scale(1, 0.7); }
+  40% { transform: scale(0.8, 1.2); }
+  60% { transform: scale(1, 1); }
+  100% { bottom: 140px; }
+}
+
+@keyframes loading-step {
+  0% {
+    box-shadow: 0 10px 0 rgba(0, 0, 0, 0),
+            0 10px 0 #334155,
+            -35px 50px 0 #334155,
+            -70px 90px 0 #334155;
+  }
+  100% {
+    box-shadow: 0 10px 0 #334155,
+            -35px 50px 0 #334155,
+            -70px 90px 0 #334155,
+            -70px 90px 0 rgba(0, 0, 0, 0);
+  }
 }
 
 .loader-text {
@@ -116,8 +156,8 @@ td {
 </head>
 <body class="h-full">
   <div id="loading-overlay" class="hidden">
-    <div class="loader-spinner"></div>
-    <p class="loader-text">Sincronizando Laboratório...</p>
+    <div class="loader"></div>
+    <p class="loader-text mt-8">Sincronizando...</p>
     <p id="loader-progress" class="loader-sub">Aguarde um momento</p>
 </div>
   <div id="app" class="w-full h-full overflow-auto bg-gradient-to-br from-indigo-50 to-blue-50"></div>
