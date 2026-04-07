@@ -637,7 +637,7 @@ async function generateRanking() {
         const processado = {};
 
         evals.forEach(e => {
-            const key = e.ra_aluno ? e.ra_aluno : `${e.nome_turma}-${e.lado}-G${e.grupo}`;
+            const key = e.ra_aluno ? e.ra_aluno : `GRUPO|${e.sede}|${e.nome_turma}|${e.lado}|${e.grupo}`;
 
             if (!processado[key]) {
                 let identificacao = "";
