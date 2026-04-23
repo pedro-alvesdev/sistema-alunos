@@ -644,8 +644,8 @@ async function generateRanking() {
 
     container.innerHTML = `
         <div class="text-center py-20">
-            <div class="loader-spinner mx-auto mb-4"></div>
-            <p class="text-slate-500 italic">Consolidando resultados filtrados...</p>
+            <div class="loader"></div>
+            <p class="text-slate-500 italic mt-8">Consolidando resultados filtrados...</p>
         </div>`;
 
     try {
@@ -665,6 +665,29 @@ async function generateRanking() {
             container.innerHTML = `<p class="text-center py-20 text-slate-500 italic">Nenhuma avaliação encontrada para os filtros selecionados.</p>`;
             return;
         }
+
+        // --- INÍCIO DA CORREÇÃO: FILTRO DE DESDUPLICAÇÃO ---
+        // 1. Ordena da mais recente para a mais antiga
+        evals.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        
+        const evalsUnicos = [];
+        const controleDuplicidade = new Set();
+
+        evals.forEach(e => {
+            // Cria uma chave única juntando o Projeto + Nome do Professor
+            const projetoChave = e.ra_aluno ? e.ra_aluno : `G|${e.sede}|${e.nome_turma}|${e.lado}|${e.grupo}`;
+            const profChave = `${projetoChave}|${e.nome_professor}`;
+
+            // Se ainda não vimos essa combinação (é a nota mais nova), nós guardamos
+            if (!controleDuplicidade.has(profChave)) {
+                controleDuplicidade.add(profChave);
+                evalsUnicos.push(e);
+            }
+        });
+
+        // Substitui a lista suja pela limpa
+        evals = evalsUnicos;
+        // --- FIM DA CORREÇÃO ---
 
         // --- FILTROS DE LADO E GRUPO APLICADOS NOS DADOS OBTIDOS ---
         if (ladoFiltro !== 'todos') {
@@ -686,15 +709,14 @@ async function generateRanking() {
                     const aluno = allStudents.find(s => String(s.ra) === String(e.ra_aluno));
                     identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
                 } else {
-                    // AQUI ESTÁ A CORREÇÃO MÁGICA PARA NÃO MISTURAR ALUNOS:
-                    // 1º: Pega apenas os alunos DESTA sala exata
+                    // Pega apenas os alunos DESTA sala exata
                     const alunosDaTurma = allStudents.filter(s => 
                         s.sede === e.sede && 
                         s.serie === e.serie && 
                         s.nome_turma === e.nome_turma
                     );
                     
-                    // 2º: Dentro desta sala, quem é deste grupo e lado?
+                    // Dentro desta sala, quem é deste grupo e lado?
                     const integrantes = alunosDaTurma.filter(s => {
                         const assign = getStudentAssignment(s.ra);
                         return String(assign.grupo) === String(e.grupo) && assign.lado === e.lado;
@@ -1589,12 +1611,26 @@ function updateEvalFilters() {
             return;
         }
 
-        // 2. Atualiza cabeçalho do Modal
-        title.innerText = isGroup ? `Histórico: Grupo ${data[0].grupo} (${data[0].lado})` : `Histórico: ${data[0].ra_aluno}`;
-        subtitle.innerText = `${data[0].sede} | ${data[0].nome_turma}`;
+        // --- INÍCIO DA CORREÇÃO: FILTRO APENAS A NOTA MAIS RECENTE POR PROFESSOR ---
+        data.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        
+        const dadosUnicos = [];
+        const professoresVistos = new Set();
 
-        // 3. Renderiza as linhas (Uma para cada professor)
-        body.innerHTML = data.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map(ev => {
+        data.forEach(ev => {
+            if (!professoresVistos.has(ev.nome_professor)) {
+                professoresVistos.add(ev.nome_professor);
+                dadosUnicos.push(ev);
+            }
+        });
+        // --- FIM DA CORREÇÃO ---
+
+        // 2. Atualiza cabeçalho do Modal
+        title.innerText = isGroup ? `Histórico: Grupo ${dadosUnicos[0].grupo} (${dadosUnicos[0].lado})` : `Histórico: ${dadosUnicos[0].ra_aluno}`;
+        subtitle.innerText = `${dadosUnicos[0].sede} | ${dadosUnicos[0].nome_turma}`;
+
+        // 3. Renderiza as linhas (Uma para cada professor limpo)
+        body.innerHTML = dadosUnicos.map(ev => {
             
             // CONVERSÃO E CÁLCULO PARA 3 CRITÉRIOS
             const nOral = parseFloat(ev.nota_oralidade) || 0;
