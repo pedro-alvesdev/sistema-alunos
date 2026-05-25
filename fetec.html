@@ -214,6 +214,9 @@ td {
     let isFetecActive = localStorage.getItem('isFetecActive') === null ? true : localStorage.getItem('isFetecActive') === 'true';
     let currentLab = 'maker'; // Padrão
     let allAssignments = [];  // Guardará os dados da nova tabela 'lab_assignments'
+    let allProjects = [];
+    let allStages = [];
+    let selectedAdminProjectId = null;
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -284,6 +287,14 @@ async function refreshData() {
             .select('*')
             .eq('data_presenca', dKey);
         allAttendances = attData || [];
+
+      // 3.5. BUSCA DE PROJETOS E ETAPAS (NOVO)
+        progressEl.innerText = "Carregando projetos estruturais...";
+        const { data: projData } = await _supabase.from('projetos').select('*');
+        allProjects = projData || [];
+        
+        const { data: stageData } = await _supabase.from('etapas_projeto').select('*');
+        allStages = stageData || [];
 
         // 4. ATUALIZAÇÃO DA INTERFACE
         if (currentScreen === 'management') applyFilters(); 
@@ -429,6 +440,7 @@ function hideLoading() {
     ${isFetecActive ? `
         <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
         <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
+        <button onclick="openAdminProjectsModal()" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm bg-purple-600 text-white hover:bg-purple-500 shadow-lg shadow-purple-900/20">⚙️ Projetos</button>
     ` : ''}
 </div>
 ` : ''}
@@ -1566,6 +1578,42 @@ function updateEvalFilters() {
                 <button onclick="closeAssignRoomModal()" class="mt-6 w-full py-2 bg-slate-600 text-white rounded-lg">Fechar</button>
             </div>
         </div>
+        <div id="admin-projects-modal" class="hidden fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div class="bg-slate-800 p-6 rounded-2xl w-full max-w-5xl border border-slate-600 flex flex-col h-[85vh]">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-white text-2xl font-bold">⚙️ Configuração de Projetos (<span class="uppercase text-blue-400" id="admin-proj-lab"></span>)</h3>
+                    <button onclick="closeAdminProjectsModal()" class="text-slate-400 hover:text-white text-2xl font-bold">✕</button>
+                </div>
+                <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden">
+                    <div class="flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-y-auto custom-scrollbar">
+                        <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">1. Cadastrar Projetos</h4>
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="new-project-name" placeholder="Ex: Carrinho Motorizado..." class="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-blue-500">
+                            <button onclick="saveProject()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-lg font-bold shadow-lg transition-all">+</button>
+                        </div>
+                        <div id="admin-project-list" class="space-y-2"></div>
+                    </div>
+                    
+                    <div class="flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-y-auto custom-scrollbar relative">
+                        <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">2. Etapas do Projeto Selecionado</h4>
+                        
+                        <div id="stage-empty-state" class="absolute inset-0 flex items-center justify-center bg-slate-900/90 z-10">
+                            <p class="text-slate-500 text-sm italic text-center px-8">Selecione um projeto na lista ao lado para editar suas etapas de construção.</p>
+                        </div>
+
+                        <div id="stage-creation-area" class="flex-1 flex flex-col">
+                            <p id="selected-project-title" class="text-emerald-400 font-bold mb-4 text-sm truncate"></p>
+                            <div class="flex gap-2 mb-4">
+                                <input type="number" id="new-stage-order" placeholder="Nº" min="1" class="w-16 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm text-center outline-none focus:border-emerald-500">
+                                <input type="text" id="new-stage-name" placeholder="Ex: Ideação, Montagem..." class="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-emerald-500">
+                                <button onclick="saveStage()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg font-bold shadow-lg transition-all">+</button>
+                            </div>
+                            <div id="admin-stage-list" class="space-y-2 overflow-y-auto custom-scrollbar pr-2 pb-10"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         `;
     }
 
@@ -2398,6 +2446,151 @@ const assign = getStudentAssignment(s.ra);
     
     // 5. Opcional: Força um recarregamento da página para garantir limpeza total do cache
     // window.location.reload(); 
+}
+    // --- MÓDULO DE ACOMPANHAMENTO: GESTÃO DE PROJETOS E ETAPAS ---
+
+function openAdminProjectsModal() {
+    selectedAdminProjectId = null;
+    document.getElementById('admin-proj-lab').innerText = currentLab;
+    document.getElementById('admin-projects-modal').classList.remove('hidden');
+    renderAdminProjects();
+    renderAdminStages();
+}
+
+function closeAdminProjectsModal() {
+    document.getElementById('admin-projects-modal').classList.add('hidden');
+}
+
+function renderAdminProjects() {
+    const list = document.getElementById('admin-project-list');
+    const myProjects = allProjects.filter(p => p.disciplina === currentLab);
+    
+    if (myProjects.length === 0) {
+        list.innerHTML = `<p class="text-slate-500 text-xs italic p-4 text-center">Nenhum projeto cadastrado.</p>`;
+        return;
+    }
+
+    list.innerHTML = myProjects.sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).map(p => {
+        const isSelected = p.id === selectedAdminProjectId;
+        return `
+            <div class="flex justify-between items-center p-3 rounded-lg border transition-all ${isSelected ? 'bg-blue-900/40 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'} cursor-pointer" onclick="selectAdminProject('${p.id}', '${p.nome_projeto}')">
+                <span class="text-white text-sm font-medium truncate pr-2">${p.nome_projeto}</span>
+                <button onclick="event.stopPropagation(); deleteProject('${p.id}')" class="text-red-400 hover:text-red-300 px-2">🗑️</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectAdminProject(id, nome) {
+    selectedAdminProjectId = id;
+    document.getElementById('selected-project-title').innerText = `✏️ Editando: ${nome}`;
+    renderAdminProjects(); // Re-renderiza para destacar o selecionado
+    renderAdminStages();
+}
+
+function renderAdminStages() {
+    const overlay = document.getElementById('stage-empty-state');
+    const list = document.getElementById('admin-stage-list');
+    const inputOrdem = document.getElementById('new-stage-order');
+    
+    if (!selectedAdminProjectId) {
+        overlay.classList.remove('hidden');
+        return;
+    }
+    
+    overlay.classList.add('hidden');
+    const myStages = allStages.filter(s => s.projeto_id === selectedAdminProjectId).sort((a, b) => a.ordem - b.ordem);
+    
+    // Sugere o próximo número de ordem automaticamente
+    inputOrdem.value = myStages.length > 0 ? myStages[myStages.length - 1].ordem + 1 : 1;
+
+    if (myStages.length === 0) {
+        list.innerHTML = `<p class="text-slate-500 text-xs italic p-4 text-center border border-dashed border-slate-700 rounded-lg">Nenhuma etapa. Adicione a primeira acima!</p>`;
+        return;
+    }
+
+    list.innerHTML = myStages.map(s => `
+        <div class="flex justify-between items-center p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-emerald-500/50 transition-colors">
+            <div class="flex items-center gap-3">
+                <span class="bg-emerald-900/50 text-emerald-400 font-black w-6 h-6 rounded flex items-center justify-center text-xs">${s.ordem}</span>
+                <span class="text-white text-sm">${s.nome_etapa}</span>
+            </div>
+            <button onclick="deleteStage('${s.id}')" class="text-red-400 hover:text-red-300 px-2">✕</button>
+        </div>
+    `).join('');
+}
+
+async function saveProject() {
+    const input = document.getElementById('new-project-name');
+    const nome = input.value.trim();
+    if (!nome) return showToast("Digite o nome do projeto", "error");
+
+    showLoading("Salvando projeto...");
+    const payload = { nome_projeto: nome, ano: new Date().getFullYear().toString(), disciplina: currentLab };
+
+    try {
+        const { data, error } = await _supabase.from('projetos').insert([payload]).select();
+        if (error) throw error;
+        
+        allProjects.push(data[0]);
+        input.value = '';
+        renderAdminProjects();
+        showToast("Projeto criado!", "success");
+    } catch (err) {
+        showToast("Erro ao criar projeto", "error");
+    } finally {
+        hideLoading();
+    }
+}
+
+async function saveStage() {
+    const inputName = document.getElementById('new-stage-name');
+    const inputOrder = document.getElementById('new-stage-order');
+    const nome = inputName.value.trim();
+    const ordem = parseInt(inputOrder.value);
+
+    if (!nome || isNaN(ordem)) return showToast("Preencha nome e número da etapa", "error");
+    if (!selectedAdminProjectId) return showToast("Selecione um projeto antes", "error");
+
+    showLoading("Salvando etapa...");
+    const payload = { projeto_id: selectedAdminProjectId, nome_etapa: nome, ordem: ordem };
+
+    try {
+        const { data, error } = await _supabase.from('etapas_projeto').insert([payload]).select();
+        if (error) throw error;
+        
+        allStages.push(data[0]);
+        inputName.value = '';
+        renderAdminStages();
+    } catch (err) {
+        showToast("Erro ao criar etapa", "error");
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteProject(id) {
+    if(!confirm("Certeza? Isso apagará o projeto e TODAS as etapas/notas dele!")) return;
+    showLoading("Excluindo...");
+    const { error } = await _supabase.from('projetos').delete().eq('id', id);
+    hideLoading();
+    if (error) return showToast("Erro ao excluir", "error");
+    
+    allProjects = allProjects.filter(p => p.id !== id);
+    if(selectedAdminProjectId === id) selectedAdminProjectId = null;
+    renderAdminProjects();
+    renderAdminStages();
+    showToast("Projeto apagado", "success");
+}
+
+async function deleteStage(id) {
+    showLoading("Excluindo...");
+    const { error } = await _supabase.from('etapas_projeto').delete().eq('id', id);
+    hideLoading();
+    if (error) return showToast("Erro ao excluir", "error");
+    
+    allStages = allStages.filter(s => s.id !== id);
+    renderAdminStages();
 }
     // FERRAMENTA DE DIAGNÓSTICO
 async function debugSupabase() {
