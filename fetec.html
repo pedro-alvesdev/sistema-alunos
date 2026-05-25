@@ -217,6 +217,7 @@ td {
     let allProjects = [];
     let allStages = [];
     let selectedAdminProjectId = null;
+    let allProgress = [];
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -288,13 +289,16 @@ async function refreshData() {
             .eq('data_presenca', dKey);
         allAttendances = attData || [];
 
-      // 3.5. BUSCA DE PROJETOS E ETAPAS (NOVO)
+     // 3.5. BUSCA DE PROJETOS, ETAPAS E PROGRESSO
         progressEl.innerText = "Carregando projetos estruturais...";
         const { data: projData } = await _supabase.from('projetos').select('*');
         allProjects = projData || [];
         
         const { data: stageData } = await _supabase.from('etapas_projeto').select('*');
         allStages = stageData || [];
+
+        const { data: progData } = await _supabase.from('progresso_equipes').select('*');
+        allProgress = progData || [];
 
         // 4. ATUALIZAÇÃO DA INTERFACE
         if (currentScreen === 'management') applyFilters(); 
@@ -457,21 +461,23 @@ function hideLoading() {
 }
 
     function switchScreen(s) {
-    currentScreen = s;
-    
-    // Limpa o conteúdo anterior para evitar sobreposição
-    document.getElementById('app').innerHTML = ''; 
+        currentScreen = s;
+        
+        // Limpa o conteúdo anterior para evitar sobreposição
+        document.getElementById('app').innerHTML = ''; 
 
-    if (s === 'management') {
-        renderManagementScreen();
-    } else if (s === 'attendance') {
-        renderAttendanceScreen();
-    } else if (s === 'evaluation') {
-        renderEvaluationScreen();
-    } else if (s === 'results') {
-        renderResultsScreen();
+        if (s === 'management') {
+            renderManagementScreen();
+        } else if (s === 'attendance') {
+            renderAttendanceScreen();
+        } else if (s === 'evaluation') {
+            renderEvaluationScreen();
+        } else if (s === 'results') {
+            renderResultsScreen();
+        } else if (s === 'tracking') {
+            renderTrackingScreen(); // CHAMA A NOVA TELA
+        }
     }
-}
 
 async function updateDateFromPicker(val) {
     if (val) {
@@ -2617,6 +2623,261 @@ async function deleteStage(id) {
     allStages = allStages.filter(s => s.id !== id);
     renderAdminStages();
 }
+    // =====================================================================
+// --- MÓDULO DE ACOMPANHAMENTO: TELA PRINCIPAL (PROFESSOR) ---
+// =====================================================================
+
+function renderTrackingScreen() {
+    currentScreen = 'tracking';
+    const app = document.getElementById('app');
+    
+    // Cores dinâmicas para distinguir visualmente do resto do sistema
+    const themeColor = 'border-purple-500';
+    const bgColor = 'bg-purple-600';
+
+    app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+            <div class="max-w-7xl mx-auto">
+                ${renderNavigationHeader()}
+                
+                <div class="bg-slate-800 p-6 rounded-xl border ${themeColor} mb-6 space-y-6 shadow-xl transition-colors duration-500">
+                    <div class="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-700 pb-4">
+                        <h2 class="text-white font-bold text-xl flex items-center gap-2">
+                            <span class="${bgColor} w-2 h-6 rounded-full"></span>
+                            Acompanhamento de Equipes - <span class="uppercase">${currentLab}</span>
+                        </h2>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Sede</label>
+                            <select id="trk-sede" onchange="updateTrackingFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Série</label>
+                            <select id="trk-serie" onchange="updateTrackingFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+                            <select id="trk-turma" onchange="applyTrackingList()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
+                            <select id="trk-lado" onchange="applyTrackingList()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500">
+                                <option value="todos">Todos</option>
+                                <option value="A">Lado A</option>
+                                <option value="B">Lado B</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-purple-400 text-[10px] uppercase font-black mb-1 block drop-shadow-md">Projeto Vigente</label>
+                            <select id="trk-projeto" onchange="applyTrackingList()" class="w-full p-2 bg-purple-900/30 border border-purple-500/50 rounded-lg text-white font-bold text-xs outline-none focus:border-purple-400"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tracking-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                </div>
+            </div>
+        </div>
+    `;
+
+    populateTrackingInitialFilters();
+}
+
+function populateTrackingInitialFilters() {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    
+    document.getElementById('trk-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('trk-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    
+    updateTrackingFilters();
+}
+
+function updateTrackingFilters() {
+    const s = document.getElementById('trk-sede').value;
+    const sr = document.getElementById('trk-serie').value;
+    
+    // 1. Atualiza Turmas daquela série
+    const listaFiltrada = allStudents.filter(x => x.sede === s && x.serie === sr);
+    const turmas = [...new Set(listaFiltrada.map(x => x.nome_turma))].sort();
+    
+    const selectTurma = document.getElementById('trk-turma');
+    const turmaAnterior = selectTurma.value;
+    selectTurma.innerHTML = turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (turmas.includes(turmaAnterior)) selectTurma.value = turmaAnterior;
+
+    // 2. Atualiza PROJETOS exclusivos daquela série (A Grande Sacada)
+    const projSelect = document.getElementById('trk-projeto');
+    const projetosDaSerie = allProjects.filter(p => p.serie === sr && p.disciplina === currentLab);
+    
+    if (projetosDaSerie.length === 0) {
+        projSelect.innerHTML = '<option value="">Nenhum projeto cadastrado...</option>';
+        projSelect.disabled = true;
+    } else {
+        projSelect.disabled = false;
+        projSelect.innerHTML = projetosDaSerie.sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).map(p => `<option value="${p.id}">${p.nome_projeto}</option>`).join('');
+    }
+
+    // 3. Renderiza os cards
+    applyTrackingList();
+}
+
+function applyTrackingList() {
+    const sede = document.getElementById('trk-sede').value;
+    const serie = document.getElementById('trk-serie').value;
+    const turma = document.getElementById('trk-turma').value;
+    const ladoFiltro = document.getElementById('trk-lado').value;
+    const projetoId = document.getElementById('trk-projeto').value;
+    const cont = document.getElementById('tracking-container');
+
+    if (!projetoId) {
+        cont.innerHTML = `
+            <div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+                <p class="text-white font-bold text-lg">Sem Projetos Ativos</p>
+                <p class="text-slate-500 text-sm mt-2">Peça ao Administrador para cadastrar um projeto para o <b class="text-purple-400">${serie}</b> na Engrenagem ⚙️ Projetos.</p>
+            </div>`;
+        return;
+    }
+
+    // Agrupa os alunos por Equipe
+    const alunosTurma = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
+    const equipes = {};
+    
+    alunosTurma.forEach(aluno => {
+        const assign = getStudentAssignment(aluno.ra);
+        if (!assign.grupo || !assign.lado) return; // Ignora quem não tem grupo
+        if (ladoFiltro !== 'todos' && assign.lado !== ladoFiltro) return;
+
+        const key = `${assign.lado}-${assign.grupo}`;
+        if (!equipes[key]) equipes[key] = { lado: assign.lado, grupo: assign.grupo, nomes: [] };
+        equipes[key].nomes.push(aluno.nome_aluno);
+    });
+
+    const chavesOrdenadas = Object.keys(equipes).sort();
+
+    if (chavesOrdenadas.length === 0) {
+        cont.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 italic">Nenhuma equipe formada nesta turma. Use a aba "Gestão" para atribuir os alunos.</div>`;
+        return;
+    }
+
+    // Busca as etapas estruturais deste projeto
+    const etapasDoProjeto = allStages.filter(e => e.projeto_id === projetoId).sort((a,b) => a.ordem - b.ordem);
+
+    cont.innerHTML = chavesOrdenadas.map(k => {
+        const eq = equipes[k];
+        const integrantes = eq.nomes.sort().join(', ');
+        
+        // Busca onde essa equipe parou
+        const prog = allProgress.find(p => 
+            p.sede === sede && p.serie === serie && p.nome_turma === turma && 
+            p.lado === eq.lado && String(p.grupo) === String(eq.grupo) && 
+            p.projeto_id === projetoId && p.disciplina === currentLab
+        );
+        const etapaAtualId = prog ? prog.etapa_atual_id : null;
+
+        return renderTrackingCard(eq.lado, eq.grupo, integrantes, projetoId, etapasDoProjeto, etapaAtualId);
+    }).join('');
+}
+
+function renderTrackingCard(lado, grupo, integrantes, projetoId, etapas, etapaAtualId) {
+    // Descobre em qual índice do array está a etapa salva no banco.
+    // Se não tiver progresso salvo, fica -1.
+    const etapaEncontradaIndex = etapas.findIndex(e => e.id === etapaAtualId);
+
+    const etapasHtml = etapas.map((etapa, idx) => {
+        const isCompleted = idx <= etapaEncontradaIndex; // Se está antes ou na bolinha atual, fica pintada
+        
+        const bolinhaClass = isCompleted 
+            ? "bg-purple-500 text-white border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)] scale-110" 
+            : "bg-slate-800 text-slate-500 border-slate-600 hover:border-purple-400 hover:text-purple-400";
+            
+        // A linha conecta a bolinha atual com a próxima
+        const linhaClass = (idx < etapas.length - 1) 
+            ? (idx < etapaEncontradaIndex ? "bg-purple-500" : "bg-slate-700") 
+            : "";
+
+        return `
+            <div class="flex flex-col items-center relative flex-1 group cursor-pointer" onclick="saveTeamProgress('${lado}', ${grupo}, '${projetoId}', '${etapa.id}')">
+                <div class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-black z-10 transition-all duration-300 ${bolinhaClass}">
+                    ${isCompleted ? '✓' : etapa.ordem}
+                </div>
+                <div class="text-[9px] text-center mt-2 font-medium ${isCompleted ? 'text-purple-300 font-bold' : 'text-slate-500 group-hover:text-slate-300'} break-words px-1 leading-tight">
+                    ${etapa.nome_etapa}
+                </div>
+                ${idx < etapas.length - 1 ? `<div class="absolute top-4 left-1/2 w-full h-[2px] -z-0 transition-colors ${linhaClass}"></div>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="bg-slate-900 p-5 rounded-2xl border border-slate-700 hover:border-purple-500/50 transition-all shadow-lg flex flex-col h-full relative overflow-hidden">
+            ${etapaEncontradaIndex === etapas.length - 1 ? '<div class="absolute top-0 right-0 bg-purple-600 text-[9px] font-black px-3 py-1 rounded-bl-lg">CONCLUÍDO 🏆</div>' : ''}
+            
+            <div class="flex flex-col border-b border-slate-800 pb-3 mb-5 pr-8">
+                <h3 class="text-white font-black text-xl leading-none">LADO ${lado} - GRUPO ${grupo}</h3>
+                <p class="text-slate-500 text-[10px] mt-1 italic leading-tight line-clamp-2" title="${integrantes}">${integrantes}</p>
+            </div>
+            
+            <div class="flex justify-between items-start w-full mt-auto pt-2">
+                ${etapas.length > 0 ? etapasHtml : '<p class="text-xs text-slate-500 italic w-full text-center bg-slate-800/50 p-2 rounded">O admin ainda não inseriu as etapas deste projeto.</p>'}
+            </div>
+        </div>
+    `;
+}
+
+async function saveTeamProgress(lado, grupo, projetoId, etapaId) {
+    const sede = document.getElementById('trk-sede').value;
+    const serie = document.getElementById('trk-serie').value;
+    const turma = document.getElementById('trk-turma').value;
+
+    showLoading("Registrando...");
+
+    const payload = {
+        sede, 
+        serie, 
+        nome_turma: turma, 
+        lado, 
+        grupo: parseInt(grupo),
+        projeto_id: projetoId, 
+        etapa_atual_id: etapaId,
+        disciplina: currentLab, 
+        atualizado_por: currentUser
+    };
+
+    try {
+        const { data, error } = await _supabase
+            .from('progresso_equipes')
+            .upsert([payload], { onConflict: 'sede,serie,nome_turma,lado,grupo,projeto_id,disciplina' })
+            .select();
+
+        if (error) throw error;
+
+        // Atualiza a memória local para piscar na tela instantaneamente
+        const progIndex = allProgress.findIndex(p => 
+            p.sede === sede && p.serie === serie && p.nome_turma === turma && 
+            p.lado === lado && String(p.grupo) === String(grupo) && 
+            p.projeto_id === projetoId && p.disciplina === currentLab
+        );
+        
+        if (progIndex !== -1) {
+            allProgress[progIndex] = data[0];
+        } else {
+            allProgress.push(data[0]);
+        }
+
+        applyTrackingList(); // Recarrega os cards
+        showToast("Progresso salvo!", "success");
+
+    } catch (err) {
+        console.error(err);
+        showToast("Erro ao registrar progresso no banco.", "error");
+    } finally {
+        hideLoading();
+    }
+}
+    
     // FERRAMENTA DE DIAGNÓSTICO
 async function debugSupabase() {
     console.log("🔍 1. Buscando dados BRUTOS direto da tabela lab_assignments...");
