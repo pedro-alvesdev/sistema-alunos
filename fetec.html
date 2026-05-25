@@ -436,11 +436,11 @@ function hideLoading() {
 <div class="flex flex-wrap gap-2 sm:gap-3">
     <button onclick="switchScreen('management')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gestão</button>
     <button onclick="switchScreen('attendance')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
+    <button onclick="switchScreen('tracking')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'tracking' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}">📍 Acompanhamento</button>
     
     ${isFetecActive ? `
         <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
         <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
-        <button onclick="openAdminProjectsModal()" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm bg-purple-600 text-white hover:bg-purple-500 shadow-lg shadow-purple-900/20">⚙️ Projetos</button>
     ` : ''}
 </div>
 ` : ''}
@@ -852,10 +852,13 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
             <div class="rounded-xl shadow-lg p-6" style="background-color: ${config.card_color}">
               <div class="flex justify-between items-center mb-6">
                 <h2 class="font-semibold text-white text-xl uppercase">👥 Lista ${currentLab} (<span id="student-count">0</span>)</h2>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
     <button onclick="exportStudentListToExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">📊 Exportar</button>
     <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">🏫 Atribuir</button>
-    ${isMaker ? `<button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Aluno</button>` : ''}
+    ${isMaker ? `
+        <button onclick="openAdminProjectsModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition-all shadow-lg">⚙️ Projetos</button>
+        <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Aluno</button>
+    ` : ''}
 </div>
               </div>
               <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
@@ -1586,13 +1589,18 @@ function updateEvalFilters() {
                 </div>
                 <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden">
                     <div class="flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-y-auto custom-scrollbar">
-                        <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">1. Cadastrar Projetos</h4>
-                        <div class="flex gap-2 mb-4">
-                            <input type="text" id="new-project-name" placeholder="Ex: Carrinho Motorizado..." class="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-blue-500">
-                            <button onclick="saveProject()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-lg font-bold shadow-lg transition-all">+</button>
-                        </div>
-                        <div id="admin-project-list" class="space-y-2"></div>
-                    </div>
+    <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">1. Cadastrar Projetos</h4>
+    <div class="flex flex-col gap-2 mb-4">
+        <select id="new-project-serie" class="w-full p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-blue-500">
+            <option value="">Selecione a Série...</option>
+        </select>
+        <div class="flex gap-2">
+            <input type="text" id="new-project-name" placeholder="Ex: Carrinho Motorizado..." class="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-blue-500">
+            <button onclick="saveProject()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-lg font-bold shadow-lg transition-all">+</button>
+        </div>
+    </div>
+    <div id="admin-project-list" class="space-y-2"></div>
+</div>
                     
                     <div class="flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-y-auto custom-scrollbar relative">
                         <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">2. Etapas do Projeto Selecionado</h4>
@@ -2452,6 +2460,11 @@ const assign = getStudentAssignment(s.ra);
 function openAdminProjectsModal() {
     selectedAdminProjectId = null;
     document.getElementById('admin-proj-lab').innerText = currentLab;
+    
+    // Popula as séries disponíveis automaticamente baseando-se nos alunos
+    const series = [...new Set(allStudents.map(s => s.serie))].filter(Boolean).sort();
+    document.getElementById('new-project-serie').innerHTML = '<option value="">Selecione a Série...</option>' + series.map(s => `<option value="${s}">${s}</option>`).join('');
+
     document.getElementById('admin-projects-modal').classList.remove('hidden');
     renderAdminProjects();
     renderAdminStages();
@@ -2474,7 +2487,10 @@ function renderAdminProjects() {
         const isSelected = p.id === selectedAdminProjectId;
         return `
             <div class="flex justify-between items-center p-3 rounded-lg border transition-all ${isSelected ? 'bg-blue-900/40 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'} cursor-pointer" onclick="selectAdminProject('${p.id}', '${p.nome_projeto}')">
-                <span class="text-white text-sm font-medium truncate pr-2">${p.nome_projeto}</span>
+                <div class="flex flex-col truncate pr-2">
+                    <span class="text-white text-sm font-medium">${p.nome_projeto}</span>
+                    <span class="text-slate-500 text-[10px] uppercase tracking-wider">${p.serie || 'Série não definida'}</span>
+                </div>
                 <button onclick="event.stopPropagation(); deleteProject('${p.id}')" class="text-red-400 hover:text-red-300 px-2">🗑️</button>
             </div>
         `;
@@ -2521,19 +2537,28 @@ function renderAdminStages() {
 }
 
 async function saveProject() {
-    const input = document.getElementById('new-project-name');
-    const nome = input.value.trim();
-    if (!nome) return showToast("Digite o nome do projeto", "error");
+    const inputName = document.getElementById('new-project-name');
+    const inputSerie = document.getElementById('new-project-serie');
+    const nome = inputName.value.trim();
+    const serie = inputSerie.value;
+
+    if (!serie) return showToast("Selecione a série do projeto!", "error");
+    if (!nome) return showToast("Digite o nome do projeto!", "error");
 
     showLoading("Salvando projeto...");
-    const payload = { nome_projeto: nome, ano: new Date().getFullYear().toString(), disciplina: currentLab };
+    const payload = { 
+        nome_projeto: nome, 
+        serie: serie, // Salva a série no Supabase
+        ano: new Date().getFullYear().toString(), 
+        disciplina: currentLab 
+    };
 
     try {
         const { data, error } = await _supabase.from('projetos').insert([payload]).select();
         if (error) throw error;
         
         allProjects.push(data[0]);
-        input.value = '';
+        inputName.value = '';
         renderAdminProjects();
         showToast("Projeto criado!", "success");
     } catch (err) {
