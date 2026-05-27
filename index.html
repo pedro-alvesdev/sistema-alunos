@@ -218,6 +218,9 @@ td {
     let allStages = [];
     let selectedAdminProjectId = null;
     let allProgress = [];
+    let allEvents = [];
+    let allSchedules = [];
+    let allClassLogs = [];
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -299,6 +302,16 @@ async function refreshData() {
 
         const { data: progData } = await _supabase.from('progresso_equipes').select('*');
         allProgress = progData || [];
+      // 3.6. BUSCA DO CALENDÁRIO E LOGS
+        progressEl.innerText = "Carregando agenda de aulas...";
+        const { data: evData } = await _supabase.from('calendario_eventos').select('*');
+        allEvents = evData || [];
+        
+        const { data: schData } = await _supabase.from('horario_aulas').select('*');
+        allSchedules = schData || [];
+        
+        const { data: logData } = await _supabase.from('registro_diario_aulas').select('*');
+        allClassLogs = logData || [];
 
         // 4. ATUALIZAÇÃO DA INTERFACE
         if (currentScreen === 'management') applyFilters(); 
@@ -859,6 +872,7 @@ function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
               <div class="flex justify-between items-center mb-6">
                 <h2 class="font-semibold text-white text-xl uppercase">👥 Lista ${currentLab} (<span id="student-count">0</span>)</h2>
                 <div class="flex flex-wrap gap-2">
+    <button onclick="openCalendarManagementModal()" class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm transition-all shadow-lg">📅 Calendário</button>
     <button onclick="exportStudentListToExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">📊 Exportar</button>
     <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">🏫 Atribuir</button>
     ${isMaker ? `
@@ -1625,6 +1639,55 @@ function updateEvalFilters() {
                             <div id="admin-stage-list" class="space-y-2 overflow-y-auto custom-scrollbar pr-2 pb-10"></div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+        <div id="calendar-management-modal" class="hidden fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div class="bg-slate-800 p-6 rounded-2xl w-full max-w-5xl border border-slate-600 flex flex-col h-[85vh]">
+                <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-4">
+                    <h3 class="text-white text-2xl font-bold flex items-center gap-2">📅 Gestão de Calendário <span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-1 rounded uppercase tracking-widest ml-2">${currentLab}</span></h3>
+                    <button onclick="closeCalendarManagementModal()" class="text-slate-400 hover:text-white text-2xl font-bold">✕</button>
+                </div>
+                
+                <div class="flex gap-2 mb-6 border-b border-slate-700 pb-2">
+                    <button onclick="switchCalendarTab('diario')" id="tab-btn-diario" class="px-4 py-2 text-sm font-bold rounded-t-lg bg-amber-600 text-white transition-colors">📝 Lançar Aula</button>
+                    <button onclick="switchCalendarTab('horarios')" id="tab-btn-horarios" class="px-4 py-2 text-sm font-bold rounded-t-lg bg-slate-700 text-slate-400 hover:text-white transition-colors">⏰ Horários Fixos</button>
+                    <button onclick="switchCalendarTab('eventos')" id="tab-btn-eventos" class="px-4 py-2 text-sm font-bold rounded-t-lg bg-slate-700 text-slate-400 hover:text-white transition-colors">🛑 Feriados e Eventos</button>
+                </div>
+
+                <div id="tab-content-diario" class="flex-1 flex flex-col overflow-hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-900 p-4 rounded-xl border border-slate-700">
+                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Data da Aula</label><input type="date" id="cal-dia-aula" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm" onchange="calcularPrevisaoTurma()"></div>
+                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Série</label><select id="cal-dia-serie" onchange="updateCalTurmas()" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></select></div>
+                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Turma</label><select id="cal-dia-turma" onchange="calcularPrevisaoTurma()" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></select></div>
+                    </div>
+                    
+                    <div id="painel-previsao-aula" class="flex-1 bg-slate-900 rounded-xl border border-slate-700 p-6 flex flex-col items-center justify-center text-center">
+                        <p class="text-slate-500 italic">Selecione a Data, Série e Turma para carregar a projeção.</p>
+                    </div>
+                </div>
+
+                <div id="tab-content-horarios" class="hidden flex-1 flex flex-col overflow-hidden">
+                    <div class="flex gap-2 mb-4 bg-slate-900 p-4 rounded-xl border border-slate-700">
+                        <select id="cal-horario-serie" onchange="updateCalHorarioTurmas()" class="flex-1 p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="">Série...</option></select>
+                        <select id="cal-horario-turma" class="flex-1 p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="">Turma...</option></select>
+                        <select id="cal-horario-dia" class="flex-1 p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm">
+                            <option value="">Dia da Semana...</option><option value="1">Segunda-feira</option><option value="2">Terça-feira</option><option value="3">Quarta-feira</option><option value="4">Quinta-feira</option><option value="5">Sexta-feira</option>
+                        </select>
+                        <button onclick="saveHorarioFixo()" class="bg-blue-600 text-white px-4 rounded font-bold hover:bg-blue-500">Salvar Horário</button>
+                    </div>
+                    <div id="lista-horarios-fixos" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pb-10"></div>
+                </div>
+
+                <div id="tab-content-eventos" class="hidden flex-1 flex flex-col overflow-hidden">
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 bg-slate-900 p-4 rounded-xl border border-slate-700 items-end">
+                        <div class="col-span-2 md:col-span-1"><label class="text-xs text-slate-400 font-bold block mb-1">Tipo</label><select id="cal-ev-tipo" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="feriado">Feriado</option><option value="provas">Semana de Provas</option><option value="ferias">Férias</option><option value="outros">Outros Bloqueios</option></select></div>
+                        <div class="col-span-2"><label class="text-xs text-slate-400 font-bold block mb-1">Título</label><input type="text" id="cal-ev-titulo" placeholder="Ex: Provas Bimestrais..." class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
+                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Início</label><input type="date" id="cal-ev-inicio" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
+                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Fim</label><input type="date" id="cal-ev-fim" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
+                        <button onclick="saveEventoGlobal()" class="col-span-2 md:col-span-5 bg-amber-600 text-white py-2 rounded font-bold hover:bg-amber-500 mt-2">Gravar Evento / Bloqueio</button>
+                    </div>
+                    <div id="lista-eventos-globais" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pb-10"></div>
                 </div>
             </div>
         </div>
@@ -2888,6 +2951,80 @@ async function saveTeamProgress(lado, grupo, projetoId, etapaId) {
         hideLoading();
     }
 }
+// =====================================================================
+// --- MÓDULO CALENDÁRIO: GESTÃO E PROJEÇÃO ---
+// =====================================================================
+
+function openCalendarManagementModal() {
+    document.getElementById('calendar-management-modal').classList.remove('hidden');
+    
+    // Popula dropdowns
+    const series = [...new Set(allStudents.map(s => s.serie))].filter(Boolean).sort();
+    
+    const serieOpts = '<option value="">Selecione a Série...</option>' + series.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('cal-dia-serie').innerHTML = serieOpts;
+    document.getElementById('cal-horario-serie').innerHTML = serieOpts;
+
+    // Configura data de hoje como padrão na aba de diário
+    document.getElementById('cal-dia-aula').value = new Date().toISOString().split('T')[0];
+
+    switchCalendarTab('diario');
+}
+
+function closeCalendarManagementModal() {
+    document.getElementById('calendar-management-modal').classList.add('hidden');
+}
+
+function switchCalendarTab(tabName) {
+    const tabs = ['diario', 'horarios', 'eventos'];
+    tabs.forEach(t => {
+        document.getElementById(`tab-content-${t}`).classList.add('hidden');
+        const btn = document.getElementById(`tab-btn-${t}`);
+        btn.classList.remove('bg-amber-600', 'text-white');
+        btn.classList.add('bg-slate-700', 'text-slate-400');
+    });
+
+    document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
+    const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+    activeBtn.classList.remove('bg-slate-700', 'text-slate-400');
+    activeBtn.classList.add('bg-amber-600', 'text-white');
+
+    if(tabName === 'horarios') renderHorariosFixos();
+    if(tabName === 'eventos') renderEventosGlobais();
+}
+
+function updateCalTurmas() {
+    const s = document.getElementById('cal-dia-serie').value;
+    const turmas = [...new Set(allStudents.filter(x => x.serie === s).map(x => x.nome_turma))].sort();
+    document.getElementById('cal-dia-turma').innerHTML = '<option value="">Selecione a Turma...</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    calcularPrevisaoTurma(); // Limpa o painel se trocar a turma
+}
+
+function updateCalHorarioTurmas() {
+    const s = document.getElementById('cal-horario-serie').value;
+    const turmas = [...new Set(allStudents.filter(x => x.serie === s).map(x => x.nome_turma))].sort();
+    document.getElementById('cal-horario-turma').innerHTML = '<option value="">Turma...</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+}
+
+// Funções de Renderização Vazias (Preencheremos a lógica de DB e Projeção no próximo passo)
+function renderHorariosFixos() {
+    const list = document.getElementById('lista-horarios-fixos');
+    list.innerHTML = `<p class="text-slate-500 italic p-4 text-center">Os horários aparecerão aqui...</p>`;
+}
+
+function renderEventosGlobais() {
+    const list = document.getElementById('lista-eventos-globais');
+    list.innerHTML = `<p class="text-slate-500 italic p-4 text-center">Os eventos aparecerão aqui...</p>`;
+}
+
+function calcularPrevisaoTurma() {
+    const painel = document.getElementById('painel-previsao-aula');
+    painel.innerHTML = `<p class="text-slate-500 italic">O motor de cálculo será carregado aqui...</p>`;
+}
+
+// Funções de salvamento (mock por enquanto)
+function saveHorarioFixo() { alert("Será integrado no próximo passo!"); }
+function saveEventoGlobal() { alert("Será integrado no próximo passo!"); }
     
     // FERRAMENTA DE DIAGNÓSTICO
 async function debugSupabase() {
