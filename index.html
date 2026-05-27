@@ -41,16 +41,155 @@
         .rounded-xl { padding-left: 8px !important; padding-right: 8px !important; }
         td, th { padding-left: 4px !important; padding-right: 4px !important; font-size: 13px !important; }
     }
+    /* Adicione isso dentro da sua tag <style> */
+td {
+    max-width: 300px;
+    white-space: normal;
+    word-wrap: break-word;
+    vertical-align: top;
+}
 
     /* Força a tabela a usar 100% da largura disponível */
     #student-list table {
         width: 98%;
         table-layout: auto;
     }
+    @media print {
+    .no-print {
+        display: none !important;
+    }
+    body {
+        background: white !important;
+        color: black !important;
+    }
+    .bg-slate-900, .bg-slate-800 {
+        background: transparent !important;
+        border: 1px solid #ddd !important;
+        color: black !important;
+    }
+    .text-white, .text-blue-400, .text-emerald-400 {
+        color: black !important;
+    }
+}
+    /* Tela de Carregamento */
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0f172a; /* Cor slate-900 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.5s ease;
+}
+
+/* Novo Loader Uiverse */
+.loader {
+  position: relative;
+  width: 120px;
+  height: 90px;
+  margin: 0 auto;
+}
+
+.loader:before {
+  content: "";
+  position: absolute;
+  bottom: 30px;
+  left: 50px;
+  height: 30px;
+  width: 30px;
+  border-radius: 50%;
+  background: #3b82f6; /* Mudei para o seu Azul Maker para combinar com o layout */
+  animation: loading-bounce 0.5s ease-in-out infinite alternate;
+}
+
+.loader:after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 7px;
+  width: 45px;
+  border-radius: 4px;
+  box-shadow: 0 5px 0 #334155, -35px 50px 0 #334155, -70px 95px 0 #334155; /* Escureci os degraus para combinar com o fundo escuro do seu overlay */
+  animation: loading-step 1s ease-in-out infinite;
+}
+
+@keyframes loading-bounce {
+  0% { transform: scale(1, 0.7); }
+  40% { transform: scale(0.8, 1.2); }
+  60% { transform: scale(1, 1); }
+  100% { bottom: 140px; }
+}
+
+@keyframes loading-step {
+  0% {
+    box-shadow: 0 10px 0 rgba(0, 0, 0, 0),
+            0 10px 0 #334155,
+            -35px 50px 0 #334155,
+            -70px 90px 0 #334155;
+  }
+  100% {
+    box-shadow: 0 10px 0 #334155,
+            -35px 50px 0 #334155,
+            -70px 90px 0 #334155,
+            -70px 90px 0 rgba(0, 0, 0, 0);
+  }
+}
+
+.loader-text {
+    margin-top: 20px;
+    color: #f8fafc;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.loader-sub {
+    color: #64748b;
+    font-size: 11px;
+    margin-top: 8px;
+}
   </style>
 </head>
 <body class="h-full">
+  <div id="loading-overlay" class="hidden">
+    <div class="loader"></div>
+    <p class="loader-text mt-8">Sincronizando...</p>
+    <p id="loader-progress" class="loader-sub">Aguarde um momento</p>
+</div>
   <div id="app" class="w-full h-full overflow-auto bg-gradient-to-br from-indigo-50 to-blue-50"></div>
+  <div id="log-modal" class="hidden fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
+    <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden">
+        <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+            <div>
+                <h3 id="log-title" class="text-xl font-black text-white uppercase tracking-tight">Histórico de Avaliação</h3>
+                <p id="log-subtitle" class="text-xs text-slate-400 italic"></p>
+            </div>
+            <button onclick="closeLogModal()" class="text-slate-400 hover:text-white p-2">✕ Fechar</button>
+        </div>
+        <div class="p-6 max-h-[70vh] overflow-y-auto custom-scrollbar">
+            <table class="w-full text-left text-xs">
+                <thead class="text-slate-500 uppercase text-[10px] bg-slate-950">
+                    <tr>
+                        <th class="p-3">Avaliador</th>
+                        <th class="p-3">Notas (O|P|C|D|T)</th>
+                        <th class="p-3">Média</th>
+                        <th class="p-3 w-1/3">Observações / Feedback</th>
+                        <th class="p-3 text-center">Apto?</th>
+                    </tr>
+                </thead>
+                <tbody id="log-table-body" class="text-slate-300">
+                    </tbody>
+            </table>
+        </div>
+        <div class="p-4 bg-slate-950 border-t border-slate-800 text-center text-[10px] text-slate-600">
+            Dados extraídos em tempo real do banco de dados FETEC.
+        </div>
+    </div>
+</div>
 
   <script>
     // --- CONFIGURAÇÃO SUPABASE ---
@@ -71,6 +210,14 @@
     let selectedStudentsForAssign = new Set();
     let importErrors = [];
     let isUploadCardVisible = false; // Começa oculto por padrão
+    // Verifica se a FETEC está ativa (padrão é true se for a primeira vez)
+    let isFetecActive = localStorage.getItem('isFetecActive') === null ? true : localStorage.getItem('isFetecActive') === 'true';
+    let currentLab = 'maker'; // Padrão
+    let allAssignments = [];  // Guardará os dados da nova tabela 'lab_assignments'
+    let allProjects = [];
+    let allStages = [];
+    let selectedAdminProjectId = null;
+    let allProgress = [];
 
     const defaultConfig = {
       page_title: "Laboratório Maker",
@@ -84,120 +231,252 @@
       font_size: 16
     };
 
-    // --- CARREGAMENTO DE DADOS ---
+// --- CARREGAMENTO DE DADOS (VERSÃO SINCRONIZADA TOTAL) ---
+// --- CARREGAMENTO DE DADOS (VERSÃO SINCRONIZADA TOTAL E SEM LIMITES) ---
 async function refreshData() {
-        showToast("Carregando banco de dados completo...", "info");
-        
+    showLoading("Sincronizando Banco de Dados...");
+    const progressEl = document.getElementById('loader-progress');
+
+    try {
+        // 1. BUSCA DE VÍNCULOS (LAB_ASSIGNMENTS) - COM PAGINAÇÃO INFINITA
+        progressEl.innerText = "Buscando grupos e lados...";
+        let allFetchedAssignments = [];
+        let pageAssign = 0;
+        const pageSizeAssign = 1000;
+        let lastAssignCount = 0;
+
+        do {
+            const { data: assignData, error: assignError } = await _supabase
+                .from('lab_assignments')
+                .select('*')
+                .range(pageAssign * pageSizeAssign, (pageAssign + 1) * pageSizeAssign - 1);
+
+            if (assignError) throw assignError;
+            
+            allFetchedAssignments = allFetchedAssignments.concat(assignData);
+            lastAssignCount = assignData.length;
+            pageAssign++;
+        } while (lastAssignCount === pageSizeAssign);
+
+        allAssignments = allFetchedAssignments; // ATRIBUIÇÃO DOS VÍNCULOS COMPLETOS
+
+        // 2. BUSCA DE ALUNOS (PAGINAÇÃO)
         let allFetchedStudents = [];
-        let lastCount = 0;
         let page = 0;
         const pageSize = 1000;
+        let lastCount = 0;
 
-        // Loop para buscar todos os alunos em blocos de 1000 (contorna o limite do servidor)
         do {
             const { data, error } = await _supabase
                 .from('students')
                 .select('*')
                 .range(page * pageSize, (page + 1) * pageSize - 1);
 
-            if (error) {
-                console.error("Erro ao carregar bloco de alunos:", error);
-                break;
-            }
-
+            if (error) throw error;
             allFetchedStudents = allFetchedStudents.concat(data);
             lastCount = data.length;
             page++;
-        } while (lastCount === pageSize); // Se o bloco veio cheio, busca o próximo
-
-        // Busca a frequência (também em blocos, para garantir)
-        let allFetchedAttendance = [];
-        page = 0;
-        do {
-            const { data, error } = await _supabase
-                .from('attendance')
-                .select('*')
-                .range(page * pageSize, (page + 1) * pageSize - 1);
-            
-            if (error) break;
-            allFetchedAttendance = allFetchedAttendance.concat(data);
-            lastCount = data.length;
-            page++;
+            progressEl.innerText = `Alunos carregados: ${allFetchedStudents.length}`;
         } while (lastCount === pageSize);
 
         allStudents = allFetchedStudents;
-        allAttendances = allFetchedAttendance;
 
-        if (currentScreen === 'management') {
-            updateFilterOptions('management');
-            applyFilters();
-        } else {
-            updateFilterOptions('attendance');
-            applyAttendanceFilters();
-        }
+        // 3. BUSCA DE FREQUÊNCIA
+        const dKey = selectedDate.toISOString().split('T')[0];
+        const { data: attData } = await _supabase
+            .from('attendance')
+            .select('*')
+            .eq('data_presenca', dKey);
+        allAttendances = attData || [];
+
+     // 3.5. BUSCA DE PROJETOS, ETAPAS E PROGRESSO
+        progressEl.innerText = "Carregando projetos estruturais...";
+        const { data: projData } = await _supabase.from('projetos').select('*');
+        allProjects = projData || [];
+        
+        const { data: stageData } = await _supabase.from('etapas_projeto').select('*');
+        allStages = stageData || [];
+
+        const { data: progData } = await _supabase.from('progresso_equipes').select('*');
+        allProgress = progData || [];
+
+        // 4. ATUALIZAÇÃO DA INTERFACE
+        if (currentScreen === 'management') applyFilters(); 
+        else if (currentScreen === 'attendance') applyAttendanceFilters();
+        else if (currentScreen === 'evaluation') applyEvalList();
+
+        showToast("Sincronização concluída!", "success");
+    } catch (err) {
+        console.error("Erro crítico:", err);
+        showToast("Falha na sincronização", "error");
+    } finally {
+        setTimeout(() => hideLoading(), 500);
     }
+}
+
 
     // --- INTERFACE: LOGIN ---
     function showLoginScreen() {
       const config = defaultConfig;
-      const baseSize = config.font_size;
       const app = document.getElementById('app');
       app.style.background = `linear-gradient(135deg, ${config.background_color}, #1e293b)`;
       
       app.innerHTML = `
-        <div class="w-full h-full flex items-center justify-center">
-          <div class="rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4" style="background-color: ${config.card_color}">
+        <div class="w-full h-full flex items-center justify-center p-4">
+          <div class="rounded-2xl shadow-2xl p-8 max-w-md w-full" style="background-color: ${config.card_color}">
             <div class="text-center mb-8">
-              <div class="mb-6 flex justify-center">
-                <svg width="120" height="120" viewBox="0 0 120 120">
-                  <circle cx="60" cy="60" r="50" fill="${config.primary_button_color}"/>
-                  <rect x="35" y="40" width="50" height="40" fill="white" rx="2"/>
-                </svg>
-              </div>
-              <h1 class="font-bold mb-2 text-white" style="font-size: ${baseSize * 1.75}px">Acesso Restrito</h1>
-              <p style="font-size: ${baseSize * 0.95}px; color: #94a3b8">Digite o código de acesso para continuar</p>
+              <h1 class="font-bold mb-2 text-white text-2xl">Laboratório Maker</h1>
+              <p class="text-sm text-slate-400">Portal de Avaliação e Gestão</p>
             </div>
-            <form id="login-form" class="space-y-6">
-              <input type="password" id="access-code" required maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" class="w-full p-4 border-2 rounded-lg text-center text-2xl tracking-widest font-mono" placeholder="••••••">
-              <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white transition-all hover:opacity-90" style="background-color: ${config.primary_button_color}">🔓 Acessar Sistema</button>
+            
+            <form id="login-form" class="space-y-4 mb-8">
+              <label class="text-xs text-slate-500 uppercase font-bold">Administração</label>
+              <input type="password" id="access-code" required maxlength="6" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" class="w-full p-4 border-2 border-slate-700 bg-slate-900 rounded-lg text-center text-2xl tracking-widest font-mono text-white" placeholder="••••••">
+              <button type="submit" class="w-full py-4 rounded-lg font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-all">🔓 Acessar Gestão</button>
             </form>
-            <div id="login-error" class="hidden mt-4 p-3 rounded-lg text-center bg-red-500/20 text-red-400">❌ Código inválido.</div>
+
+            ${isFetecActive ? `
+                <div class="relative flex py-5 items-center">
+                    <div class="flex-grow border-t border-slate-700"></div>
+                    <span class="flex-shrink mx-4 text-slate-500 text-xs uppercase italic">ou avalie um projeto</span>
+                    <div class="flex-grow border-t border-slate-700"></div>
+                </div>
+                <div class="space-y-4">
+                    <button onclick="startPublicEvaluation()" class="w-full py-4 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
+                        ⭐ Avaliar FETEC
+                    </button>
+                </div>
+            ` : ''}
           </div>
         </div>`;
 
-      document.getElementById('login-form').onsubmit = async (e) => {
+      // Configura o evento de submit IMEDIATAMENTE após inserir o HTML
+      const form = document.getElementById('login-form');
+      form.onsubmit = async (e) => {
         e.preventDefault();
-        if(document.getElementById('access-code').value === '123456') {
+        const code = document.getElementById('access-code').value;
+
+        if (code === '123456' || code === '456789') {
             isAuthenticated = true;
+            
+            if (code === '123456') {
+                currentLab = 'maker';
+                currentUser = 'admin_maker';
+            } else {
+                currentLab = 'ciencias';
+                currentUser = 'admin_ciencias';
+            }
+
             sessionStorage.setItem('isAuth', 'true');
+            sessionStorage.setItem('currentLab', currentLab);
+            sessionStorage.setItem('userRole', currentUser);
+            
+            showToast(`Bem-vindo! Modo: ${currentLab.toUpperCase()}`, "success");
+            
             await refreshData();
-            renderManagementScreen();
+            switchScreen('management');
         } else {
-            document.getElementById('login-error').classList.remove('hidden');
+            showToast("Código inválido!", "error");
         }
       };
     }
 
+   function showLoading(msg = "Sincronizando Laboratório...") {
+    const overlay = document.getElementById('loading-overlay');
+    if (!overlay) return;
+    document.getElementById('loader-progress').innerText = msg;
+    
+    overlay.style.display = "flex"; // Força a exibição
+    overlay.classList.remove('hidden');
+    setTimeout(() => { overlay.style.opacity = "1"; }, 10);
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loading-overlay');
+    if (!overlay) return;
+    
+    overlay.style.opacity = "0";
+    setTimeout(() => {
+        overlay.classList.add('hidden');
+        overlay.style.display = "none"; // Remove do caminho dos cliques
+    }, 500);
+}
+
+   async function startPublicEvaluation() {
+    // Mudamos isAuthenticated para true para que o sistema libere os botões de interface
+    // mas mantemos o currentUser diferente para saber que é um avaliador externo
+    isAuthenticated = true; 
+    currentUser = 'avaliador_fetec_full';
+    
+    showToast("Modo Avaliação com permissão de edição ativado", "info");
+    
+    try {
+        await refreshData();
+        // Você pode escolher abrir direto na avaliação ou na gestão
+        renderEvaluationScreen(); 
+    } catch (err) {
+        console.error("Erro ao iniciar:", err);
+        showToast("Erro ao carregar dados.", "error");
+    }
+}
+
     // --- INTERFACE: HEADER & NAVEGAÇÃO ---
     function renderNavigationHeader() {
-      const config = defaultConfig;
-      return `
+    const config = defaultConfig;
+    // Se não estiver autenticado como admin, mostra apenas o botão de Sair
+    const isAdmin = isAuthenticated === true; 
+
+    return `
         <header class="mb-8">
-          <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-            <h1 class="font-bold text-white" style="font-size: 32px">${config.page_title}</h1>
-            <button onclick="handleLogout()" class="px-4 py-2 rounded-lg font-semibold text-white bg-slate-600 hover:bg-slate-500">🚪 Sair</button>
-          </div>
-          <div class="flex gap-3">
-            <button onclick="switchScreen('management')" class="flex-1 px-6 py-3 rounded-lg font-semibold ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gerenciamento</button>
-            <button onclick="switchScreen('attendance')" class="flex-1 px-6 py-3 rounded-lg font-semibold ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
-          </div>
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+                <div>
+                    <h1 class="font-bold text-white text-3xl">${config.page_title}</h1>
+                    <p class="text-emerald-400 text-xs font-bold uppercase tracking-wider">${isAdmin ? 'Modo Administrador' : 'Módulo de Avaliação FETEC'}</p>
+                </div>
+                <button onclick="handleLogout()" class="px-4 py-2 rounded-lg font-semibold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600">🚪 Sair / Voltar</button>
+            </div>
+            
+          ${isAdmin ? `
+<div class="flex flex-wrap gap-2 sm:gap-3">
+    <button onclick="switchScreen('management')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'management' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📊 Gestão</button>
+    <button onclick="switchScreen('attendance')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'attendance' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">✅ Frequência</button>
+    <button onclick="switchScreen('tracking')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'tracking' ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400'}">📍 Acompanhamento</button>
+    
+    ${isFetecActive ? `
+        <button onclick="switchScreen('evaluation')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'evaluation' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">⭐ FETEC</button>
+        <button onclick="switchScreen('results')" class="flex-1 min-w-[120px] px-4 py-3 rounded-lg font-semibold text-sm ${currentScreen === 'results' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}">📈 Resultados</button>
+    ` : ''}
+</div>
+` : ''}
         </header>`;
-    }
+}
+
+    function getStudentAssignment(ra) {
+    if (!ra) return { lado: null, grupo: null };
+    
+    return allAssignments.find(a => 
+        String(a.ra_aluno).trim() === String(ra).trim() && 
+        String(a.disciplina).toLowerCase() === String(currentLab).toLowerCase()
+    ) || { lado: null, grupo: null };
+}
 
     function switchScreen(s) {
         currentScreen = s;
-        if(s === 'management') renderManagementScreen();
-        else renderAttendanceScreen();
+        
+        // Limpa o conteúdo anterior para evitar sobreposição
+        document.getElementById('app').innerHTML = ''; 
+
+        if (s === 'management') {
+            renderManagementScreen();
+        } else if (s === 'attendance') {
+            renderAttendanceScreen();
+        } else if (s === 'evaluation') {
+            renderEvaluationScreen();
+        } else if (s === 'results') {
+            renderResultsScreen();
+        } else if (s === 'tracking') {
+            renderTrackingScreen(); // CHAMA A NOVA TELA
+        }
     }
 
 async function updateDateFromPicker(val) {
@@ -213,89 +492,700 @@ async function updateDateFromPicker(val) {
     }
 }
 
-    // --- TELA: GERENCIAMENTO ---
-    function renderManagementScreen() {
-      const config = defaultConfig;
-      const app = document.getElementById('app');
-      app.style.background = `linear-gradient(135deg, ${config.background_color}, #1e293b)`;
+    async function loadEvaluatorsList() {
+    const { data, error } = await _supabase
+        .from('evaluations_fetec')
+        .select('nome_professor');
+
+    if (error) return;
+
+    // Filtra apenas nomes únicos e remove nulos
+    const uniqueNames = [...new Set(data.map(item => item.nome_professor))].filter(Boolean).sort();
+    
+    const datalist = document.getElementById('evaluators-list');
+    if (datalist) {
+        datalist.innerHTML = uniqueNames.map(nome => `<option value="${nome}">`).join('');
+    }
+}
+
+   async function renderResultsScreen() {
+    currentScreen = 'results';
+    const app = document.getElementById('app');
+    
+    app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+            <div class="max-w-7xl mx-auto">
+                ${renderNavigationHeader()}
+                
+                <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-700 mb-6 no-print shadow-lg">
+                    <button onclick="currentLab='maker'; generateRanking();" 
+                        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'maker' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
+                        RANKING MAKER
+                    </button>
+                    <button onclick="currentLab='ciencias'; generateRanking();" 
+                        class="flex-1 py-2 rounded-lg text-[10px] font-black transition-all ${currentLab === 'ciencias' ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:text-slate-300'}">
+                        RANKING CIÊNCIAS
+                    </button>
+                </div>
+                
+                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-6 shadow-xl no-print">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Sede</label>
+                            <select id="res-sede" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Série</label>
+                            <select id="res-serie" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+                            <select id="res-turma" onchange="updateResultFilters(); generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todas as Turmas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
+                            <select id="res-lado" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todos os Lados</option>
+                                <option value="A">Lado A</option>
+                                <option value="B">Lado B</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Grupo</label>
+                            <select id="res-grupo" onchange="generateRanking()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todos os Grupos</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                           
+<button onclick="exportResultsToExcel()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg text-xs transition-all shadow-lg shadow-emerald-900/20">
+    📊 Exportar
+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="results-content" class="space-y-8">
+                    <div class="text-center py-20">
+                        <div class="loader-spinner mx-auto mb-4"></div>
+                        <p class="text-slate-500 italic text-sm">Organizando dados do ranking...</p>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    populateInitialResultFilters();
+}
+
+    function populateInitialResultFilters() {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].filter(Boolean).sort();
+    const sedeSelect = document.getElementById('res-sede');
+    
+    if (sedeSelect) {
+        sedeSelect.innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+    
+    updateResultFilters(); // Popula séries e turmas com base na primeira sede
+    setTimeout(() => generateRanking(), 100);
+}
+
+function updateResultFilters() {
+    const sedeSel = document.getElementById('res-sede');
+    const serieSel = document.getElementById('res-serie');
+    const turmaSel = document.getElementById('res-turma');
+    const grupoSel = document.getElementById('res-grupo');
+
+    if (!sedeSel || !serieSel || !turmaSel || !grupoSel) return;
+
+    const s = sedeSel.value;
+    const sr = serieSel.value;
+    const turmaAtual = turmaSel.value;
+    const grupoAtual = grupoSel.value;
+
+    // 1. Filtra alunos pela sede
+    let listaFiltrada = allStudents.filter(x => x.sede === s);
+    const series = [...new Set(listaFiltrada.map(x => x.serie))].filter(Boolean).sort();
+    
+    // Atualiza o select de Séries
+    const serieAnterior = sr;
+    serieSel.innerHTML = series.map(x => `<option value="${x}">${x}</option>`).join('');
+    if (series.includes(serieAnterior)) {
+        serieSel.value = serieAnterior;
+    } else if (series.length > 0) {
+        serieSel.value = series[0];
+    }
+
+    // 2. Filtra alunos pela Sede E Série atualizadas
+    const srAtual = serieSel.value;
+    listaFiltrada = listaFiltrada.filter(x => x.serie === srAtual);
+
+    // Extrai e atualiza as Turmas
+    const turmas = [...new Set(listaFiltrada.map(x => x.nome_turma))].filter(Boolean).sort();
+    
+    turmaSel.innerHTML = '<option value="todos">Todas as Turmas</option>' + 
+                         turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+                         
+    if (turmas.includes(turmaAtual)) {
+        turmaSel.value = turmaAtual;
+    }
+    
+    // 3. Atualiza os Grupos baseados na turma selecionada
+    let listaTurma = listaFiltrada;
+    if (turmaSel.value !== 'todos') {
+        listaTurma = listaFiltrada.filter(x => x.nome_turma === turmaSel.value);
+    }
+    
+    const grupos = [...new Set(listaTurma.map(x => {
+        const assign = getStudentAssignment(x.ra);
+        return assign.grupo;
+    }))].filter(Boolean).sort((a,b) => a - b);
+    
+    grupoSel.innerHTML = '<option value="todos">Todos os Grupos</option>' + 
+                         grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
+                         
+    if (grupos.map(String).includes(String(grupoAtual))) {
+        grupoSel.value = grupoAtual;
+    }
+}
+
+async function generateRanking() {
+    const sede = document.getElementById('res-sede').value;
+    const serie = document.getElementById('res-serie').value;
+    const turmaFiltro = document.getElementById('res-turma').value;
+    const ladoFiltro = document.getElementById('res-lado').value;
+    const grupoFiltro = document.getElementById('res-grupo').value; // NOVO FILTRO
+    const container = document.getElementById('results-content');
+
+    if (!sede || !serie) return;
+
+    container.innerHTML = `
+        <div class="text-center py-20">
+            <div class="loader"></div>
+            <p class="text-slate-500 italic mt-8">Consolidando resultados filtrados...</p>
+        </div>`;
+
+    try {
+        let query = _supabase.from('evaluations_fetec').select('*')
+            .eq('sede', sede)
+            .eq('serie', serie)
+            .eq('disciplina', currentLab);
+
+        if (turmaFiltro !== 'todos') {
+            query = query.eq('nome_turma', turmaFiltro);
+        }
+
+        let { data: evals, error } = await query;
+
+        if (error) throw error;
+        if (!evals || evals.length === 0) {
+            container.innerHTML = `<p class="text-center py-20 text-slate-500 italic">Nenhuma avaliação encontrada para os filtros selecionados.</p>`;
+            return;
+        }
+
+        // --- INÍCIO DA CORREÇÃO: FILTRO DE DESDUPLICAÇÃO ---
+        // 1. Ordena da mais recente para a mais antiga
+        evals.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        
+        const evalsUnicos = [];
+        const controleDuplicidade = new Set();
+
+        evals.forEach(e => {
+            // Cria uma chave única juntando o Projeto + Nome do Professor
+            const projetoChave = e.ra_aluno ? e.ra_aluno : `G|${e.sede}|${e.nome_turma}|${e.lado}|${e.grupo}`;
+            const profChave = `${projetoChave}|${e.nome_professor}`;
+
+            // Se ainda não vimos essa combinação (é a nota mais nova), nós guardamos
+            if (!controleDuplicidade.has(profChave)) {
+                controleDuplicidade.add(profChave);
+                evalsUnicos.push(e);
+            }
+        });
+
+        // Substitui a lista suja pela limpa
+        evals = evalsUnicos;
+        // --- FIM DA CORREÇÃO ---
+
+        // --- FILTROS DE LADO E GRUPO APLICADOS NOS DADOS OBTIDOS ---
+        if (ladoFiltro !== 'todos') {
+            evals = evals.filter(e => e.lado === ladoFiltro);
+        }
+        if (grupoFiltro !== 'todos') {
+            evals = evals.filter(e => String(e.grupo) === String(grupoFiltro));
+        }
+
+        const processado = {};
+
+        evals.forEach(e => {
+            const key = e.ra_aluno ? e.ra_aluno : `GRUPO|${e.sede}|${e.nome_turma}|${e.lado}|${e.grupo}`;
+
+            if (!processado[key]) {
+                let identificacao = "";
+                
+                if (e.ra_aluno) {
+                    const aluno = allStudents.find(s => String(s.ra) === String(e.ra_aluno));
+                    identificacao = aluno ? aluno.nome_aluno : `RA: ${e.ra_aluno}`;
+                } else {
+                    // Pega apenas os alunos DESTA sala exata
+                    const alunosDaTurma = allStudents.filter(s => 
+                        s.sede === e.sede && 
+                        s.serie === e.serie && 
+                        s.nome_turma === e.nome_turma
+                    );
+                    
+                    // Dentro desta sala, quem é deste grupo e lado?
+                    const integrantes = alunosDaTurma.filter(s => {
+                        const assign = getStudentAssignment(s.ra);
+                        return String(assign.grupo) === String(e.grupo) && assign.lado === e.lado;
+                    }).map(s => s.nome_aluno).sort().join(', ');
+                    
+                    identificacao = `
+                        <div class="flex flex-col">
+                            <span class="text-white font-bold uppercase tracking-tight">Lado ${e.lado || '?'} - Grupo ${e.grupo || '?'}</span>
+                            <span class="text-[9px] text-slate-500 italic leading-tight">${integrantes || 'Nenhum aluno atribuído'}</span>
+                        </div>`;
+                }
+
+                processado[key] = { 
+                    key: key, 
+                    nome: identificacao, 
+                    avaliacoes: [], 
+                    turma: e.nome_turma, 
+                    apto: false 
+                };
+            }
+            
+            const n1 = parseFloat(e.nota_oralidade) || 0;
+            const n2 = parseFloat(e.nota_postura) || 0;
+            const n3 = parseFloat(e.nota_dominio) || 0; 
+            
+            processado[key].avaliacoes.push((n1 + n2 + n3) / 3);
+            if (e.apto_fetec) processado[key].apto = true;
+        });
+
+        const rankingFinal = Object.values(processado).map(obj => {
+            const soma = obj.avaliacoes.reduce((acc, n) => acc + n, 0);
+            obj.mediaFinal = soma / obj.avaliacoes.length;
+            return obj;
+        }).sort((a, b) => b.mediaFinal - a.mediaFinal);
+      window.lastRankingData = rankingFinal;
+
+        const listaAptos = rankingFinal.filter(r => r.apto === true);
+        const listaGeral = rankingFinal.filter(r => r.apto !== true);
+
+        let htmlFinal = '';
+        if (listaAptos.length > 0) htmlFinal += renderTabelaRanking(listaAptos, `🌟 Selecionados FETEC`, "border-amber-500/30 bg-amber-500/5", "text-amber-400");
+        if (listaGeral.length > 0) htmlFinal += renderTabelaRanking(listaGeral, `📊 Classificação Geral`, "border-slate-700 bg-slate-900/50", "text-slate-400");
+
+        container.innerHTML = htmlFinal || `<p class="text-center py-20 text-slate-500 italic">Nenhum aluno/grupo restou após os filtros.</p>`;
+
+    } catch (err) {
+        console.error("Erro no Ranking:", err);
+        showToast("Erro ao processar ranking", "error");
+    }
+}
+
+// Função auxiliar para gerar o HTML das tabelas (mantém o código limpo)
+function renderTabelaRanking(dados, titulo, bordaEstilo, textoEstilo) {
+    return `
+        <div class="rounded-2xl border ${bordaEstilo} p-5 mb-8 shadow-2xl overflow-hidden">
+            <h3 class="${textoEstilo} font-black text-[10px] uppercase tracking-[0.2em] mb-4 flex justify-between items-center">
+                <span>${titulo}</span>
+                <span class="opacity-40">${dados.length} itens</span>
+            </h3>
+            <div class="overflow-x-auto custom-scrollbar">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                        <tr class="text-slate-500 border-b border-slate-800">
+                            <th class="p-3 w-10 text-center">#</th>
+                            <th class="p-3">Equipe / Aluno</th>
+                            <th class="p-3 text-center">Turma</th>
+                            <th class="p-3 text-right">Média</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/50">
+                        ${dados.map((r, idx) => `
+                            <tr class="hover:bg-white/5 transition-colors">
+                                <td class="p-3 text-center font-mono opacity-40">${idx + 1}º</td>
+                                <td class="p-3">
+                                    <button onclick="showEvaluationLog('${r.key}')" class="text-left group block">
+                                        <div class="font-bold text-white uppercase group-hover:text-blue-400 transition-colors">${r.nome}</div>
+                                        <div class="text-[9px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">🔍 Clique para ver notas dos jurados</div>
+                                    </button>
+                                </td>
+                                <td class="p-3 text-center text-slate-400 italic font-medium">${r.turma}</td>
+                                <td class="p-3 text-right font-black text-sm ${textoEstilo}">${r.mediaFinal.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+   function renderManagementScreen() {
+    const config = defaultConfig;
+    const app = document.getElementById('app');
+    const isMaker = (currentLab === 'maker');
+    
+    // Define a cor de fundo (Azul para Ciências, Slate para Maker)
+    app.style.background = isMaker 
+        ? `linear-gradient(135deg, ${config.background_color}, #1e293b)` 
+        : `linear-gradient(135deg, #0c4a6e, #0f172a)`;
       
-      app.innerHTML = `
+    app.innerHTML = `
         <div class="min-h-full p-4 md:p-8">
           <div class="max-w-7xl mx-auto">
             ${renderNavigationHeader()}
-
-            <div class="rounded-xl shadow-lg p-6 mb-6 transition-all duration-300" style="background-color: ${config.card_color}">
-    <div class="flex justify-between items-center cursor-pointer" onclick="toggleUploadCard()">
-        <h2 class="font-semibold text-white text-xl flex items-center gap-2">
-            📊 Importar Planilha Excel 
-            <span id="upload-status-badge" class="text-[10px] bg-slate-700 px-2 py-1 rounded uppercase tracking-wider text-slate-400">Oculto</span>
-        </h2>
-        <button class="bg-slate-700 hover:bg-slate-600 text-white p-2 rounded-lg transition-transform" id="upload-toggle-btn">
-            <svg id="upload-icon" class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-            </svg>
-        </button>
-    </div>
-
-    <div id="upload-content" class="${isUploadCardVisible ? '' : 'hidden'} mt-6 border-t border-slate-700 pt-6">
-        <div class="flex flex-col sm:flex-row gap-4 items-center">
-            <input type="file" id="excel-upload" accept=".xlsx,.xls" class="flex-1 w-full p-3 border-2 border-dashed border-slate-600 rounded-lg text-slate-400">
-            <button onclick="handleExcelUpload()" id="upload-btn" class="w-full sm:w-auto px-6 py-3 rounded-lg font-semibold text-white bg-blue-600">Processar Planilha</button>
-        </div>
-        <div id="import-progress" class="hidden mt-4">
-             <div class="progress-bar"><div id="progress-fill" class="progress-fill bg-blue-500" style="width: 0%"></div></div>
-             <p id="progress-text" class="text-slate-400 text-sm mt-2 text-center">Iniciando...</p>
-        </div>
-        <div class="mt-3 p-3 rounded-lg bg-slate-900/50 border border-slate-700 text-sm text-slate-300">
-            <p class="font-semibold mb-1">📋 Colunas Necessárias (MAIÚSCULAS):</p>
-            <p class="font-mono text-[11px] break-all">SEDE | SERIE | TURNO | CURSO | NOME_TURMA | RA | NOME_ALUNO</p>
-        </div>
-    </div>
-</div>
-
+            <div class="flex justify-end mb-4 no-print">
+                ${isMaker ? `
+                    <div class="bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-3 shadow-lg">
+                        <span class="text-[10px] uppercase font-bold text-slate-400">Módulo FETEC</span>
+                        <label class="switch scale-75">
+                            <input type="checkbox" onchange="toggleFetecSystem(this.checked)" ${isFetecActive ? 'checked' : ''}>
+                            <span class="slider"></span>
+                        </label>
+                    </div>` : `<div class="bg-blue-900/20 p-2 px-4 rounded-lg border border-blue-800/30 text-blue-400 text-[10px] uppercase font-black tracking-widest italic">Modo Ciências Ativo</div>`}
+            </div>
             <div class="rounded-xl shadow-lg p-6 mb-6" style="background-color: ${config.card_color}">
-              <div class="flex justify-between items-center mb-4">
-                <h2 class="font-semibold text-white text-xl">🔍 ${config.filter_title}</h2>
-                <button onclick="clearFilters()" class="text-sm bg-slate-700 text-white px-3 py-1 rounded">🔄 Limpar</button>
-              </div>
               <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 ${renderFilterSelects('management')}
               </div>
               <input type="text" id="search-nome" oninput="applyFilters()" placeholder="🔎 Buscar por Nome..." class="w-full p-3 rounded-lg bg-slate-900 border border-slate-600 text-white">
             </div>
-
             <div class="rounded-xl shadow-lg p-6" style="background-color: ${config.card_color}">
-              <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
-    <h2 class="font-semibold text-white text-xl">
-        👥 ${config.student_list_title} (<span id="student-count">0</span>)
-    </h2>
-    
-    <div class="grid grid-cols-2 lg:flex lg:flex-row gap-2 w-full lg:w-auto">
-        <button onclick="printStudentList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors">
-            🖨️ Imprimir
-        </button>
-        <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-500 transition-colors">
-            🏫 Atribuir
-        </button>
-        <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-500 transition-colors">
-            ➕ Aluno
-        </button>
-        
-        <button onclick="deleteAllStudents()" class="bg-red-900/40 text-red-200 border border-red-800/50 px-4 py-2 rounded-lg text-sm hover:bg-red-800 hover:text-white transition-all">
-            🗑️ Limpar Tudo
-        </button>
-    </div>
+              <div class="flex justify-between items-center mb-6">
+                <h2 class="font-semibold text-white text-xl uppercase">👥 Lista ${currentLab} (<span id="student-count">0</span>)</h2>
+                <div class="flex flex-wrap gap-2">
+    <button onclick="exportStudentListToExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all">📊 Exportar</button>
+    <button onclick="openAssignRoomModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium">🏫 Atribuir</button>
+    ${isMaker ? `
+        <button onclick="openAdminProjectsModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm transition-all shadow-lg">⚙️ Projetos</button>
+        <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">➕ Aluno</button>
+    ` : ''}
 </div>
-             <div class="bg-slate-900/30 rounded-lg border-y border-slate-700 sm:border-x">
-    <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
-</div>
+              </div>
+              <div id="student-list" class="w-full overflow-x-auto custom-scrollbar"></div>
+            </div>
           </div>
         </div>
-        ${renderModals()}
-      `;
-      updateFilterOptions('management');
-      renderStudentList();
+        ${renderModals()}`;
+
+    updateFilterOptions('management');
+    renderStudentList();
+}
+
+    function renderEvalCard(titulo, ra, grupo, lado, membros = "") {
+    // Agora o ID do card junta o grupo e o lado para não dar conflito!
+    const id = ra || `g${grupo}-${lado}`; 
+    
+    const criterios = [
+        { id: 'Oralidade', label: 'Oralidade' },
+        { id: 'Postura', label: 'Postura' },
+        { id: 'Dominio', label: 'Domínio e Transmissão' }
+    ];
+
+    return `
+        <div class="bg-slate-900 p-5 rounded-2xl border border-slate-700 hover:border-emerald-500/50 transition-all shadow-lg relative overflow-hidden" id="card-${id}">
+            <div class="absolute top-0 right-0 bg-emerald-600/20 px-4 py-2 rounded-bl-2xl border-b border-l border-emerald-500/30">
+                <span class="text-[10px] text-emerald-400 font-black uppercase block leading-none">Média</span>
+                <span id="live-media-${id}" class="text-xl font-black text-emerald-400 leading-none">0.0</span>
+            </div>
+
+            <div class="flex flex-col mb-4 border-b border-slate-800 pb-3 pr-16">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-white leading-tight">${titulo}</h3>
+                    <span class="bg-slate-800 text-slate-400 text-[9px] px-2 py-1 rounded font-bold uppercase">${ra ? 'Individual' : 'Coletivo'}</span>
+                </div>
+                ${membros ? `<p class="text-slate-500 text-[11px] mt-1 italic leading-tight">${membros}</p>` : ''}
+            </div>
+            
+            <div class="space-y-3">
+                ${criterios.map(c => `
+                    <div class="flex justify-between items-center bg-slate-800/40 p-3 rounded-lg border border-slate-700/50">
+                        <label class="text-slate-300 text-xs font-medium">${c.label}</label>
+                        <input type="number" 
+                            id="nota-${id}-${c.id}" 
+                            step="0.1" min="0" max="10" 
+                            placeholder="0.0" 
+                            oninput="calculateLiveMedia('${id}')" 
+                            class="eval-input-${id} w-20 bg-slate-950 border border-slate-600 rounded-lg text-center text-emerald-400 font-black text-lg p-2 outline-none focus:border-emerald-500">
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="mt-5 space-y-3">
+                <textarea id="obs-${id}" placeholder="Observações e feedback pedagógico..." 
+                    class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white text-xs h-20 outline-none focus:border-blue-500 resize-none"></textarea>
+                
+                <div class="flex items-center justify-between bg-slate-800/60 p-3 rounded-xl border border-slate-700">
+                    <span class="text-white text-xs font-bold">Projeto Apto FETEC?</span>
+                    <input type="checkbox" id="apto-${id}" class="w-5 h-5 accent-emerald-500 cursor-pointer">
+                </div>
+
+                <button onclick="saveFetecEval('${ra}', '${grupo}', '${lado}', '${id}')" 
+                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-emerald-900/20 text-sm uppercase tracking-widest">
+                    💾 Salvar Avaliação
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+    function applyEvalList() {
+    const sede = document.getElementById('ev-sede').value;
+    const serie = document.getElementById('ev-serie').value;
+    const turma = document.getElementById('ev-turma').value;
+    const lado = document.getElementById('ev-lado').value;
+    const grupoSel = document.getElementById('ev-grupo').value;
+    const cont = document.getElementById('eval-container');
+
+    if (!cont) return;
+
+    cont.innerHTML = ''; 
+
+    if (!sede || !serie || !turma) {
+        cont.innerHTML = `<div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+            <p class="text-white font-bold text-lg">Aguardando Filtros</p>
+            <p class="text-slate-500 text-sm mt-2">Selecione <b>Sede, Série e Turma</b>.</p>
+        </div>`;
+        return; 
     }
+
+    let listaBase = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
+    
+    const listaComVinculo = listaBase.map(aluno => {
+        const vinculo = allAssignments.find(a => 
+            a.ra_aluno === aluno.ra && 
+            a.disciplina === currentLab
+        ) || { lado: null, grupo: null };
+        
+        return { ...aluno, currentLado: vinculo.lado, currentGrupo: vinculo.grupo };
+    });
+
+    let listaFiltrada;
+    if (lado === 'todos') {
+        listaFiltrada = listaComVinculo;
+    } else {
+        listaFiltrada = listaComVinculo.filter(s => s.currentLado === lado);
+    }
+    
+    if (grupoSel !== 'todos') {
+        listaFiltrada = listaFiltrada.filter(s => String(s.currentGrupo) === grupoSel);
+    }
+
+    if (listaFiltrada.length === 0) {
+        cont.innerHTML = `<div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+            <p class="text-slate-500 italic text-sm">Nenhum aluno/grupo localizado.</p>
+        </div>`;
+        return;
+    }
+
+    if (serie.includes("6")) {
+        cont.innerHTML = listaFiltrada
+            .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
+            .map(aluno => {
+                const infoGrupo = aluno.currentGrupo ? `Grupo ${aluno.currentGrupo}` : 'Sem Grupo';
+                const labelLado = aluno.currentLado ? `Lado ${aluno.currentLado}` : 'S/L';
+                // Enviamos currentLado como quarto parâmetro
+                return renderEvalCard(`${aluno.nome_aluno}`, aluno.ra, aluno.currentGrupo, aluno.currentLado, `${labelLado} | ${infoGrupo}`);
+            })
+            .join('');
+    } else {
+        // Agrupamos usando Lado E Grupo para isolar completamente
+        const gruposLado = {};
+        
+        listaFiltrada.forEach(s => {
+            if (!s.currentGrupo || !s.currentLado) return; 
+            const key = `${s.currentLado}-${s.currentGrupo}`;
+            
+            if (!gruposLado[key]) {
+                gruposLado[key] = { lado: s.currentLado, grupo: s.currentGrupo, nomes: [] };
+            }
+            gruposLado[key].nomes.push(s.nome_aluno);
+        });
+
+        const chavesOrdenadas = Object.keys(gruposLado).sort();
+        
+        if (chavesOrdenadas.length === 0 && currentLab === 'ciencias') {
+             cont.innerHTML = `<p class="col-span-full text-center py-10 text-slate-500 italic">Aguardando atribuição de grupos em Ciências...</p>`;
+             return;
+        }
+
+        cont.innerHTML = chavesOrdenadas.map(k => {
+            const g = gruposLado[k];
+            const integrantes = g.nomes.sort().join(', ');
+            return renderEvalCard(`LADO ${g.lado} - GRUPO ${g.grupo}`, null, g.grupo, g.lado, integrantes);
+        }).join('');
+    }
+    
+   setTimeout(() => {
+       
+        loadExistingEvaluations(); 
+    }, 200);
+}
+
+   async function saveFetecEval(ra, grupo, ladoCard, cardId) {
+    // 1. CAPTURA E VALIDAÇÃO DO AVALIADOR
+    const profInput = document.getElementById('evaluator-name');
+    const prof = profInput ? profInput.value.trim() : "";
+
+    if (!prof || prof.length < 3) {
+        showToast("⚠️ Digite seu nome completo no topo da página!", "error");
+        if (profInput) profInput.focus();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
+    // 2. VALIDAÇÃO DE NOTAS (0 A 10)
+    const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
+    let notaInvalida = false;
+    
+    inputs.forEach(i => {
+        const v = parseFloat(i.value.toString().replace(',', '.'));
+        if (isNaN(v) || v > 10 || v < 0) notaInvalida = true;
+    });
+
+    if (notaInvalida) {
+        showToast("⚠️ Notas inválidas! Use valores de 0 a 10.", "error");
+        return;
+    }
+
+    // 3. FEEDBACK VISUAL DE PROCESSAMENTO
+    const card = document.getElementById(`card-${cardId}`);
+    const btn = card.querySelector('button');
+    const originalBtnText = btn.innerText;
+    
+    btn.disabled = true;
+    btn.innerText = "⏳ Sincronizando...";
+    card.style.opacity = "0.7";
+
+    // 4. TRATAMENTO DE NOTAS (Conversão segura de vírgula para ponto)
+    const getNotaLimpa = (sub) => {
+        const input = document.getElementById(`nota-${cardId}-${sub}`);
+        if (!input || !input.value) return 0;
+        const valor = parseFloat(input.value.toString().replace(',', '.'));
+        return isNaN(valor) ? 0 : valor;
+    };
+
+    // 5. MONTAGEM DOS DADOS
+    const sedeAtual = document.getElementById('ev-sede').value;
+    const serieAtual = document.getElementById('ev-serie').value;
+    const turmaAtual = document.getElementById('ev-turma').value;
+    
+    // Pega o lado direto do CARD e não mais do select global
+    const ladoReal = (ladoCard && ladoCard !== 'null' && ladoCard !== 'undefined') ? ladoCard : null;
+
+    const payload = {
+        ra_aluno: (ra && ra !== 'null' && ra !== 'undefined') ? ra : null,
+        grupo: (grupo && grupo !== 'null' && grupo !== 'undefined') ? parseInt(grupo) : null,
+        lado: ladoReal, // <-- Correção principal aqui
+        nome_professor: prof,
+        disciplina: currentLab,
+        data_eval: new Date().toISOString().split('T')[0],
+        
+        nota_oralidade: getNotaLimpa('Oralidade'),
+        nota_postura: getNotaLimpa('Postura'),
+        nota_dominio: getNotaLimpa('Dominio'),
+        nota_clareza: 0, 
+        nota_transmissao: 0,
+        
+        observacao: document.getElementById(`obs-${cardId}`).value,
+        apto_fetec: document.getElementById(`apto-${cardId}`).checked,
+        sede: sedeAtual,
+        serie: serieAtual,
+        nome_turma: turmaAtual,
+        usuario_sistema: currentUser
+    };
+
+    // 6. ENVIO AO SUPABASE (UPSERT)
+    try {
+        const { error: dbError } = await _supabase
+            .from('evaluations_fetec')
+            .upsert([payload], { 
+                onConflict: 'nome_professor, ra_aluno, grupo, lado, nome_turma, disciplina, sede' 
+            });
+
+        if (dbError) throw dbError;
+
+        showToast("✅ Avaliação Sincronizada!", "success");
+        
+        // Feedback de sucesso no Card
+        card.classList.add('border-emerald-500/50');
+        card.style.opacity = "1";
+        btn.disabled = false;
+        btn.innerText = "🔄 Atualizar Nota";
+        btn.classList.replace('bg-emerald-600', 'bg-blue-600');
+        
+        profInput.readOnly = true;
+        profInput.classList.add('bg-slate-800', 'text-slate-400');
+
+        focusNextCard(cardId);
+
+    } catch (error) {
+        console.error("Erro Supabase:", error);
+        showToast("❌ Erro ao salvar: " + error.message, "error");
+        btn.disabled = false;
+        btn.innerText = originalBtnText;
+        card.style.opacity = "1";
+    }
+}
+
+    function focusNextCard(currentId) {
+    // 1. Obtém todos os cards de avaliação que estão na tela no momento
+    const allCards = Array.from(document.querySelectorAll('[id^="card-"]'));
+    
+    // 2. Encontra o índice do card que acabou de ser salvo
+    const currentIndex = allCards.findIndex(card => card.id === `card-${currentId}`);
+    
+    // 3. Verifica se existe um próximo card
+    if (currentIndex !== -1 && currentIndex < allCards.length - 1) {
+        const nextCard = allCards[currentIndex + 1];
+
+        // 4. Scroll Suave até o próximo card
+        nextCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // 5. Feedback Visual (Piscar levemente o próximo card)
+        nextCard.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2', 'ring-offset-slate-900');
+        setTimeout(() => {
+            nextCard.classList.remove('ring-2', 'ring-blue-500');
+        }, 1000);
+
+        // 6. Foco no primeiro input de nota do próximo card
+        const firstInput = nextCard.querySelector('input[type="number"]');
+        if (firstInput) {
+            setTimeout(() => firstInput.focus(), 600); // Aguarda o scroll terminar
+        }
+    } else {
+        showToast("🎉 Fim da lista de avaliação!", "success");
+    }
+}
+
+    // Salva os filtros atuais da avaliação no navegador
+function saveEvalFilters() {
+    const filters = {
+        sede: document.getElementById('ev-sede')?.value,
+        serie: document.getElementById('ev-serie')?.value,
+        turma: document.getElementById('ev-turma')?.value,
+        lado: document.getElementById('ev-lado')?.value,
+        grupo: document.getElementById('ev-grupo')?.value
+    };
+    localStorage.setItem(`lastEvalFilters_${currentLab}`, JSON.stringify(filters));
+}
+
+// Tenta restaurar os filtros salvos anteriormente
+function loadPersistentEvalFilters() {
+    const saved = localStorage.getItem(`lastEvalFilters_${currentLab}`);
+    if (!saved) return null;
+    
+    try {
+        return JSON.parse(saved);
+    } catch (e) {
+        return null;
+    }
+}
 
     // --- TELA: FREQUÊNCIA ---
     function renderAttendanceScreen() {
@@ -330,7 +1220,7 @@ async function updateDateFromPicker(val) {
             <div class="bg-slate-900 p-3 sm:p-4 rounded-xl border border-slate-700 flex justify-between items-center gap-2">
         
                 <h2 class="text-white font-bold text-xl">✅ Lista de Frequência (<span id="attendance-count">0</span>)</h2>
-                <button onclick="printAttendanceList()" class="bg-slate-700 text-white px-4 py-2 rounded-lg">🖨️ Imprimir Lista</button>
+                <button onclick="exportAttendanceToExcel()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-lg font-bold transition-all">📊 Exportar</button>
               </div>
               <div id="attendance-list" class="space-y-3"></div>
             </div>
@@ -345,6 +1235,92 @@ async function updateDateFromPicker(val) {
       updateFilterOptions('attendance');
       applyAttendanceFilters();
     }
+
+   async function loadExistingEvaluations() {
+    const sede = document.getElementById('ev-sede').value;
+    const turma = document.getElementById('ev-turma').value;
+    const prof = document.getElementById('evaluator-name').value.trim();
+
+    if (!prof) return;
+
+    const { data, error } = await _supabase
+        .from('evaluations_fetec')
+        .select('*')
+        .eq('sede', sede)
+        .eq('nome_turma', turma)
+        .eq('nome_professor', prof)
+        .eq('disciplina', currentLab); 
+
+    if (error) return;
+
+    if (data && data.length > 0) {
+        data.forEach(eval => {
+            // Agora o ID inclui o lado na hora de puxar os dados
+            const id = eval.ra_aluno || `g${eval.grupo}-${eval.lado}`;
+            const card = document.getElementById(`card-${id}`);
+            
+            if (card) {
+                const inputO = document.getElementById(`nota-${id}-Oralidade`);
+                const inputP = document.getElementById(`nota-${id}-Postura`);
+                const inputD = document.getElementById(`nota-${id}-Dominio`);
+
+                if(inputO) inputO.value = eval.nota_oralidade;
+                if(inputP) inputP.value = eval.nota_postura;
+                if(inputD) inputD.value = eval.nota_dominio;
+                
+                document.getElementById(`obs-${id}`).value = eval.observacao || '';
+                document.getElementById(`apto-${id}`).checked = eval.apto_fetec;
+
+                const btn = card.querySelector('button');
+                btn.innerText = "✅ Atualizar Avaliação";
+                btn.classList.replace('bg-emerald-600', 'bg-blue-600');
+                card.classList.add('border-blue-500/50');
+                
+                // 💡 A CORREÇÃO ESTÁ AQUI: 
+                // Dispara o cálculo da média logo após injetar as notas do banco!
+                calculateLiveMedia(id);
+            }
+        });
+    }
+}
+
+    function calculateLiveMedia(cardId) {
+    const inputs = document.querySelectorAll(`.eval-input-${cardId}`);
+    let soma = 0;
+    let preenchidos = 0;
+    let temErro = false;
+
+    inputs.forEach(input => {
+        let val = parseFloat(input.value.toString().replace(',', '.'));
+        
+        if (val > 10) {
+            temErro = true;
+            input.classList.add('bg-red-900/50', 'border-red-500', 'text-red-200');
+        } else {
+            input.classList.remove('bg-red-900/50', 'border-red-500', 'text-red-200');
+            if (!isNaN(val)) {
+                soma += val;
+                preenchidos++;
+            }
+        }
+    });
+
+    const display = document.getElementById(`live-media-${cardId}`);
+    if (display) {
+        if (temErro) {
+            display.innerText = "!!";
+            display.className = "text-xl font-black text-red-500 animate-bounce";
+        } else {
+            // DIVISOR ALTERADO PARA 3
+            const media = preenchidos > 0 ? (soma / 3) : 0;
+            display.innerText = media.toFixed(1);
+            
+            if (media >= 9) display.className = "text-xl font-black text-yellow-400 leading-none";
+            else if (media < 5 && media > 0) display.className = "text-xl font-black text-red-400 leading-none";
+            else display.className = "text-xl font-black text-emerald-400 leading-none";
+        }
+    }
+}
 
     function toggleUploadCard() {
     isUploadCardVisible = !isUploadCardVisible;
@@ -365,6 +1341,173 @@ async function updateDateFromPicker(val) {
         badge.classList.replace('bg-blue-600', 'bg-slate-700');
         badge.classList.replace('text-white', 'text-slate-400');
     }
+}
+
+    function toggleFetecSystem(active) {
+    isFetecActive = active;
+    localStorage.setItem('isFetecActive', active);
+    showToast(active ? "Sistema FETEC Ativado" : "Sistema FETEC Ocultado", "info");
+    
+    // Pequeno delay para o usuário ver o switch mudar antes de recarregar
+    setTimeout(() => {
+        location.reload(); 
+    }, 500);
+}
+
+   function renderEvaluationScreen() {
+    currentScreen = 'evaluation';
+    const app = document.getElementById('app');
+    
+    // Define as cores baseadas no laboratório selecionado para feedback visual
+    const themeColor = currentLab === 'maker' ? 'border-blue-500' : 'border-emerald-500';
+    const bgColor = currentLab === 'maker' ? 'bg-blue-600' : 'bg-emerald-600';
+
+    app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+            <div class="max-w-7xl mx-auto">
+                ${renderNavigationHeader()}
+                
+                <div class="flex bg-slate-900 p-1 rounded-xl border border-slate-700 mb-6 no-print shadow-2xl">
+                    <button onclick="currentLab='maker'; renderEvaluationScreen();" 
+                        class="flex-1 py-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${currentLab === 'maker' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}">
+                        🛠️ LABORATÓRIO MAKER
+                    </button>
+                    <button onclick="currentLab='ciencias'; renderEvaluationScreen();" 
+                        class="flex-1 py-3 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${currentLab === 'ciencias' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}">
+                        🧪 LAB. CIÊNCIAS
+                    </button>
+                </div>
+                
+                <div class="bg-slate-800 p-6 rounded-xl border ${themeColor} mb-6 space-y-6 shadow-xl transition-colors duration-500">
+                    <div class="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-700 pb-4">
+                        <h2 class="text-white font-bold text-xl flex items-center gap-2">
+                            <span class="${bgColor} w-2 h-6 rounded-full"></span>
+                            Painel do Avaliador - <span class="uppercase">${currentLab}</span>
+                        </h2>
+                        <div class="w-full md:w-72">
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Seu Nome (Avaliador)</label>
+                            <input type="text" id="evaluator-name" list="evaluators-list" 
+                                onchange="saveEvaluatorLocal(this.value); applyEvalList();" 
+                                placeholder="Digite ou selecione..." 
+                                class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 outline-none transition-all">
+                            <datalist id="evaluators-list"></datalist>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Sede</label>
+                            <select id="ev-sede" onchange="updateEvalFilters(); saveEvalFilters();" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Série</label>
+                            <select id="ev-serie" onchange="updateEvalFilters(); saveEvalFilters();" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+                            <select id="ev-turma" onchange="updateEvalFilters(); saveEvalFilters();" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
+                            <select id="ev-lado" onchange="applyEvalList(); saveEvalFilters();" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500">
+                                <option value="todos">Todos</option>
+                                <option value="A">Lado A</option>
+                                <option value="B">Lado B</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Grupo</label>
+                            <select id="ev-grupo" onchange="applyEvalList(); saveEvalFilters();" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-blue-500"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="eval-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    </div>
+            </div>
+        </div>`;
+    
+    populateInitialEvalFilters();
+    initEvaluatorField();
+}
+
+    function populateInitialEvalFilters() {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    
+    document.getElementById('ev-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('ev-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    
+    // Tenta carregar filtros persistentes
+    const lastFilters = loadPersistentEvalFilters();
+    if (lastFilters) {
+        if (sedes.includes(lastFilters.sede)) document.getElementById('ev-sede').value = lastFilters.sede;
+        if (series.includes(lastFilters.serie)) document.getElementById('ev-serie').value = lastFilters.serie;
+    }
+
+    updateEvalFilters(); // Dispara o preenchimento de turmas e grupos
+
+    // Se houver filtros salvos para turma, lado e grupo, aplica-os após o updateEvalFilters
+    if (lastFilters) {
+        setTimeout(() => {
+            const tSel = document.getElementById('ev-turma');
+            if (Array.from(tSel.options).some(opt => opt.value === lastFilters.turma)) {
+                tSel.value = lastFilters.turma;
+            }
+            document.getElementById('ev-lado').value = lastFilters.lado || 'todos';
+            document.getElementById('ev-grupo').value = lastFilters.grupo || 'todos';
+            applyEvalList();
+        }, 100);
+    }
+}
+
+    // Salva o nome no navegador e atualiza a lista global
+function saveEvaluatorLocal(nome) {
+    if (nome) {
+        localStorage.setItem('lastEvaluatorName', nome);
+    }
+}
+
+// Carrega o nome salvo anteriormente e busca a lista do banco
+async function initEvaluatorField() {
+    const savedName = localStorage.getItem('lastEvaluatorName');
+    const input = document.getElementById('evaluator-name');
+    
+    if (savedName && input) {
+        input.value = savedName;
+    }
+    
+    await loadEvaluatorsList();
+}
+
+function updateEvalFilters() {
+    const s = document.getElementById('ev-sede').value;
+    const sr = document.getElementById('ev-serie').value;
+    
+    // 1. Filtra a base de alunos conforme Sede e Série selecionadas
+    const listaFiltrada = allStudents.filter(x => x.sede === s && x.serie === sr);
+    
+    // 2. Extrai Turmas e Grupos Únicos desta combinação
+    const turmas = [...new Set(listaFiltrada.map(x => x.nome_turma))].sort();
+    const grupos = [...new Set(listaFiltrada.filter(x => x.grupo).map(x => x.grupo))].sort((a,b) => a - b);
+
+    // 3. Atualiza o Select de Turmas
+    const selectTurma = document.getElementById('ev-turma');
+    const turmaAnterior = selectTurma.value; // Tenta manter a turma se ela ainda existir na nova série
+    
+    selectTurma.innerHTML = turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    
+    // Se a turma selecionada antes ainda existe na nova série, mantém. Senão, pega a primeira.
+    if (turmas.includes(turmaAnterior)) {
+        selectTurma.value = turmaAnterior;
+    }
+
+    // 4. Atualiza o Select de Grupos
+    document.getElementById('ev-grupo').innerHTML = '<option value="todos">Todos os Grupos</option>' + 
+                                                     grupos.map(g => `<option value="${g}">Grupo ${g}</option>`).join('');
+    
+    // 5. Atualiza a lista de cards na tela
+    applyEvalList();
 }
 
     // --- COMPONENTES REUTILIZÁVEIS ---
@@ -443,8 +1586,162 @@ async function updateDateFromPicker(val) {
                 </div>
                 <button onclick="closeAssignRoomModal()" class="mt-6 w-full py-2 bg-slate-600 text-white rounded-lg">Fechar</button>
             </div>
-        </div>`;
+        </div>
+        <div id="admin-projects-modal" class="hidden fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div class="bg-slate-800 p-6 rounded-2xl w-full max-w-5xl border border-slate-600 flex flex-col h-[85vh]">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-white text-2xl font-bold">⚙️ Configuração de Projetos (<span class="uppercase text-blue-400" id="admin-proj-lab"></span>)</h3>
+                    <button onclick="closeAdminProjectsModal()" class="text-slate-400 hover:text-white text-2xl font-bold">✕</button>
+                </div>
+                <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden">
+                    <div class="flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-y-auto custom-scrollbar">
+    <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">1. Cadastrar Projetos</h4>
+    <div class="flex flex-col gap-2 mb-4">
+        <select id="new-project-serie" class="w-full p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-blue-500">
+            <option value="">Selecione a Série...</option>
+        </select>
+        <div class="flex gap-2">
+            <input type="text" id="new-project-name" placeholder="Ex: Carrinho Motorizado..." class="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-blue-500">
+            <button onclick="saveProject()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-lg font-bold shadow-lg transition-all">+</button>
+        </div>
+    </div>
+    <div id="admin-project-list" class="space-y-2"></div>
+</div>
+                    
+                    <div class="flex flex-col bg-slate-900 rounded-xl border border-slate-700 p-4 overflow-y-auto custom-scrollbar relative">
+                        <h4 class="text-white font-bold mb-4 uppercase text-[10px] tracking-widest text-slate-400">2. Etapas do Projeto Selecionado</h4>
+                        
+                        <div id="stage-empty-state" class="absolute inset-0 flex items-center justify-center bg-slate-900/90 z-10">
+                            <p class="text-slate-500 text-sm italic text-center px-8">Selecione um projeto na lista ao lado para editar suas etapas de construção.</p>
+                        </div>
+
+                        <div id="stage-creation-area" class="flex-1 flex flex-col">
+                            <p id="selected-project-title" class="text-emerald-400 font-bold mb-4 text-sm truncate"></p>
+                            <div class="flex gap-2 mb-4">
+                                <input type="number" id="new-stage-order" placeholder="Nº" min="1" class="w-16 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm text-center outline-none focus:border-emerald-500">
+                                <input type="text" id="new-stage-name" placeholder="Ex: Ideação, Montagem..." class="flex-1 p-3 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm outline-none focus:border-emerald-500">
+                                <button onclick="saveStage()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 rounded-lg font-bold shadow-lg transition-all">+</button>
+                            </div>
+                            <div id="admin-stage-list" class="space-y-2 overflow-y-auto custom-scrollbar pr-2 pb-10"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        `;
     }
+
+   async function showEvaluationLog(key) {
+    const modal = document.getElementById('log-modal');
+    const body = document.getElementById('log-table-body');
+    const title = document.getElementById('log-title');
+    const subtitle = document.getElementById('log-subtitle');
+
+    if (!modal) return console.error("Modal de log não encontrado!");
+
+    // Estado de carregamento
+    body.innerHTML = `<tr><td colspan="5" class="p-10 text-center italic text-slate-500">Buscando histórico de jurados...</td></tr>`;
+    modal.classList.remove('hidden');
+
+    try {
+        // 1. Identifica se a busca é por RA ou pela nossa nova chave de Grupo
+        const isGroup = key.includes('GRUPO|');
+        let query = _supabase.from('evaluations_fetec').select('*').eq('disciplina', currentLab);
+
+        if (isGroup) {
+            // Fatiamos a chave usando a barra vertical
+            const parts = key.split('|'); // ['GRUPO', Sede, Turma, Lado, GNum]
+            const sede = parts[1];
+            const turma = parts[2];
+            const lado = parts[3];
+            const grupoNum = parts[4];
+
+            query = query.eq('sede', sede)
+                         .eq('nome_turma', turma)
+                         .eq('lado', lado)
+                         .eq('grupo', grupoNum);
+        } else {
+            query = query.eq('ra_aluno', key);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-slate-500">Nenhum registro detalhado para este projeto.</td></tr>`;
+            return;
+        }
+
+        // --- INÍCIO DA CORREÇÃO: FILTRO APENAS A NOTA MAIS RECENTE POR PROFESSOR ---
+        data.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        
+        const dadosUnicos = [];
+        const professoresVistos = new Set();
+
+        data.forEach(ev => {
+            if (!professoresVistos.has(ev.nome_professor)) {
+                professoresVistos.add(ev.nome_professor);
+                dadosUnicos.push(ev);
+            }
+        });
+        // --- FIM DA CORREÇÃO ---
+
+        // 2. Atualiza cabeçalho do Modal
+        title.innerText = isGroup ? `Histórico: Grupo ${dadosUnicos[0].grupo} (${dadosUnicos[0].lado})` : `Histórico: ${dadosUnicos[0].ra_aluno}`;
+        subtitle.innerText = `${dadosUnicos[0].sede} | ${dadosUnicos[0].nome_turma}`;
+
+        // 3. Renderiza as linhas (Uma para cada professor limpo)
+        body.innerHTML = dadosUnicos.map(ev => {
+            
+            // CONVERSÃO E CÁLCULO PARA 3 CRITÉRIOS
+            const nOral = parseFloat(ev.nota_oralidade) || 0;
+            const nPost = parseFloat(ev.nota_postura) || 0;
+            const nDom  = parseFloat(ev.nota_dominio) || 0;
+            
+            const mediaIndiv = (nOral + nPost + nDom) / 3;
+            
+            return `
+                <tr class="border-b border-slate-800/50 hover:bg-white/5 transition-colors">
+                    <td class="p-3">
+                        <span class="font-bold text-blue-400 block">${ev.nome_professor}</span>
+                        <span class="text-[9px] text-slate-500 uppercase tracking-tighter italic">Avaliador</span>
+                    </td>
+                    <td class="p-3">
+                        <div class="grid grid-cols-3 gap-2 text-[10px] font-mono text-slate-400 text-center">
+                            <div class="bg-slate-800 rounded p-1" title="Oralidade">O: ${nOral.toFixed(1)}</div>
+                            <div class="bg-slate-800 rounded p-1" title="Postura">P: ${nPost.toFixed(1)}</div>
+                            <div class="bg-slate-800 rounded p-1" title="Domínio">D: ${nDom.toFixed(1)}</div>
+                        </div>
+                    </td>
+                    <td class="p-3">
+                        <span class="text-sm font-black text-white bg-blue-600/20 border border-blue-500/30 px-2 py-1 rounded">
+                            ${mediaIndiv.toFixed(2)}
+                        </span>
+                    </td>
+                    <td class="p-3">
+                        <p class="text-[11px] text-slate-400 italic leading-snug max-w-xs break-words">
+                            ${ev.observacao || '<span class="opacity-20 text-[9px]">Nenhum comentário registrado.</span>'}
+                        </p>
+                    </td>
+                    <td class="p-3 text-center">
+                        ${ev.apto_fetec ? 
+                            '<span class="text-amber-500 text-lg" title="Apto para FETEC">★</span>' : 
+                            '<span class="text-slate-700" title="Não selecionado">☆</span>'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+    } catch (err) {
+        console.error("Erro no Histórico:", err);
+        body.innerHTML = `<tr><td colspan="5" class="p-10 text-center text-red-500 font-bold">Falha ao buscar os dados do histórico.</td></tr>`;
+    }
+}
+
+function closeLogModal() {
+    document.getElementById('log-modal').classList.add('hidden');
+}
 
 
     async function deleteStudent(id) {
@@ -536,93 +1833,90 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
 }
 
     // --- FUNÇÕES DE IMPRESSÃO ---
-    function printStudentList() {
-        const win = window.open('', '_blank');
-        const html = `
-            <html>
-            <head>
-                <title>Lista de Alunos</title>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
-                    th { background: #f2f2f2; }
-                    h1 { text-align: center; }
-                </style>
-            </head>
-            <body>
-                <h1>Lista Geral de Alunos</h1>
-                <p>Total de alunos: ${filteredStudents.length}</p>
-                // Dentro de printStudentList, altere a parte da tabela:
-<table>
-    <thead>
-        <tr><th>#</th><th>Nome</th><th>RA</th><th>Sede</th><th>Série</th><th>Turma</th><th>Lado/G</th></tr>
-    </thead>
-    <tbody>
-        ${filteredStudents.map((s, index) => `
-            <tr>
-                <td>${index + 1}</td>
-                <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.sede}</td>
-                <td>${s.serie}</td><td>${s.nome_turma}</td>
-                <td>${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
-            </tr>`).join('')}
-    </tbody>
-</table>
-                <script>window.print();<\/script>
-            </body>
-            </html>`;
-        win.document.write(html);
-        win.document.close();
+    // --- FUNÇÕES DE EXPORTAÇÃO PARA EXCEL ---
+
+function exportAttendanceToExcel() {
+    const dKey = selectedDate.toLocaleDateString('pt-BR');
+    const sede = document.getElementById('attendance-filter-sede')?.value || 'todos';
+    const serie = document.getElementById('attendance-filter-serie')?.value || 'todos';
+    const turno = document.getElementById('attendance-filter-turno')?.value || 'todos';
+
+    // Pega exatamente a lista que a tela está mostrando
+    const list = allStudents.filter(x => {
+        return (sede === 'todos' || x.sede === sede) && 
+               (serie === 'todos' || x.serie === serie) && 
+               (turno === 'todos' || x.nome_turma === turno);
+    }).sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno));
+
+    if (list.length === 0) return showToast("Nenhum dado para exportar", "error");
+
+    const excelData = list.map((s, index) => {
+        const att = allAttendances.find(a => a.ra === s.ra && a.data_presenca === selectedDate.toISOString().split('T')[0]);
+        const present = att ? att.presente : true;
+        return {
+            "Nº": index + 1,
+            "Nome do Aluno": s.nome_aluno,
+            "RA": s.ra,
+            "Turma": s.nome_turma,
+            "Sede": s.sede,
+            "Status": present ? "PRESENTE" : "AUSENTE"
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Frequencia");
+    XLSX.writeFile(wb, `Frequencia_${currentLab}_${dKey.replace(/\//g, '-')}.xlsx`);
+}
+
+function exportResultsToExcel() {
+    if (!window.lastRankingData || window.lastRankingData.length === 0) {
+        return showToast("Nenhum ranking para exportar!", "error");
     }
 
-    function printAttendanceList() {
-        const dKey = selectedDate.toLocaleDateString('pt-BR');
-        const win = window.open('', '_blank');
-        const html = `
-            <html>
-            <head>
-                <title>Frequência - ${dKey}</title>
-                <style>
-                    body { font-family: sans-serif; padding: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
-                    th { background: #f2f2f2; }
-                    .status { font-weight: bold; }
-                    h1 { text-align: center; margin-bottom: 0; }
-                    .date { text-align: center; margin-top: 5px; color: #666; }
-                </style>
-            </head>
-            <body>
-                <h1>Relatório de Frequência</h1>
-                <p class="date">Data: ${dKey}</p>
-                <table>
-                    <thead>
-                        <tr><th>Nome</th><th>RA</th><th>Turma</th><th>Status</th></tr>
-                    </thead>
-                    <tbody>
-                        ${allStudents.filter(s => {
-                            // Filtra apenas os que estão visíveis na tela no momento da impressão
-                            const sede = document.getElementById('attendance-filter-sede')?.value || 'todos';
-                            const serie = document.getElementById('attendance-filter-serie')?.value || 'todos';
-                            const turno = document.getElementById('attendance-filter-turno')?.value || 'todos';
-                            return (sede === 'todos' || s.sede === sede) && (serie === 'todos' || s.serie === serie) && (turno === 'todos' || s.nome_turma === turno);
-                        }).sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno)).map(s => {
-                            const att = allAttendances.find(a => a.ra === s.ra && a.data_presenca === selectedDate.toISOString().split('T')[0]);
-                            const present = att ? att.presente : true;
-                            return `
-                                <tr>
-                                    <td>${s.nome_aluno}</td><td>${s.ra}</td><td>${s.nome_turma}</td>
-                                    <td class="status">${present ? 'PRESENTE' : 'AUSENTE'}</td>
-                                </tr>`;
-                        }).join('')}
-                    </tbody>
-                </table>
-                <script>window.print();<\/script>
-            </body>
-            </html>`;
-        win.document.write(html);
-        win.document.close();
-    }
+    const excelData = window.lastRankingData.map((r, idx) => {
+        // Limpa o HTML injetado nos nomes dos grupos
+        const div = document.createElement('div');
+        div.innerHTML = r.nome;
+        const nomeLimpo = div.textContent || div.innerText || r.nome;
+
+        return {
+            "Classificação": (idx + 1) + "º",
+            "Equipe / Aluno": nomeLimpo.trim().replace(/\s+/g, ' '), // Remove quebras de linha
+            "Turma": r.turma,
+            "Média Final": parseFloat(r.mediaFinal.toFixed(2)),
+            "Status FETEC": r.apto ? "SELECIONADO" : "Classificação Geral"
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ranking");
+    XLSX.writeFile(wb, `Ranking_FETEC_${currentLab}.xlsx`);
+}
+
+function exportStudentListToExcel() {
+    if (filteredStudents.length === 0) return showToast("Nenhum dado para exportar", "error");
+
+    const excelData = filteredStudents.sort((a,b) => a.nome_aluno.localeCompare(b.nome_aluno)).map((s, index) => {
+        const assign = getStudentAssignment(s.ra);
+        return {
+            "Nº": index + 1,
+            "Nome do Aluno": s.nome_aluno,
+            "RA": s.ra,
+            "Sede": s.sede,
+            "Série": s.serie,
+            "Turma": s.nome_turma,
+            "Lado": assign.lado || "Sem Lado",
+            "Grupo": assign.grupo || "Sem Grupo"
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Alunos");
+    XLSX.writeFile(wb, `Lista_Alunos_${currentLab}.xlsx`);
+}
 
     // --- LÓGICA DE NEGÓCIO (SUPABASE) ---
 
@@ -671,106 +1965,125 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
       reader.readAsArrayBuffer(file);
     }
 
-    async function handleStudentSubmit(e) {
-    e.preventDefault(); // Impede o recarregamento da página
+  async function handleStudentSubmit(e) {
+    e.preventDefault();
+    const ra = document.getElementById('m-ra').value;
     
-    const student = {
-        nome_aluno: document.getElementById('m-nome').value,
-        ra: document.getElementById('m-ra').value,
-        sede: document.getElementById('m-sede').value,
-        serie: document.getElementById('m-serie').value,
-        nome_turma: document.getElementById('m-turma').value,
-        parte_sala: document.getElementById('m-parte').value,
-        grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null,
-        usuario: currentUser
-    };
+    try {
+        // 1. Atualiza dados básicos do aluno
+        const { error: errStudent } = await _supabase
+            .from('students')
+            .upsert({
+                nome_aluno: document.getElementById('m-nome').value,
+                ra: ra,
+                sede: document.getElementById('m-sede').value,
+                serie: document.getElementById('m-serie').value,
+                nome_turma: document.getElementById('m-turma').value
+            }, { onConflict: 'ra' });
 
-    showToast("Salvando alterações...", "info");
+        if (errStudent) throw errStudent;
 
-    const { error } = await _supabase
-        .from('students')
-        .upsert(student, { onConflict: 'ra' });
+        // 2. Atualiza o vínculo específico deste laboratório
+        const { error: errAssign } = await _supabase
+            .from('lab_assignments')
+            .upsert({
+                ra_aluno: String(ra).trim(),
+                disciplina: currentLab,
+                lado: document.getElementById('m-parte').value || null,
+                grupo: document.getElementById('m-grupo').value ? parseInt(document.getElementById('m-grupo').value) : null
+            }, { onConflict: 'ra_aluno,disciplina' });
 
-    if (error) {
-        console.error("Erro ao salvar:", error);
-        showToast("Erro ao salvar: " + error.message, "error");
-    } else {
-        showToast("Dados atualizados com sucesso!", "success");
+        if (errAssign) throw errAssign;
+
+        showToast("✅ Alterações salvas!", "success");
         closeStudentModal();
-        await refreshData(); // Recarrega os dados do banco para a memória local
-        
-        // Renderiza a tela correta dependendo de onde você está
-        if (currentScreen === 'management') renderManagementScreen();
-        else renderAttendanceScreen();
+        await refreshData();
+    } catch (err) {
+        console.error(err);
+        showToast("Erro ao salvar informações", "error");
     }
 }
 
   async function togglePresence(ra, val) {
-        const dKey = selectedDate.getFullYear() + '-' + 
-             String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
-             String(selectedDate.getDate()).padStart(2, '0');
-        const student = allStudents.find(x => x.ra === ra);
-        
-        if (!student) return;
+    const dKey = selectedDate.toISOString().split('T')[0];
+    const student = allStudents.find(x => x.ra === ra);
+    if (!student) return;
 
-        // 1. Salva no Supabase (Banco de Dados)
-        const { error } = await _supabase.from('attendance').upsert({
-            ra: ra, 
-            data_presenca: dKey, 
-            presente: val, 
-            nome_aluno: student.nome_aluno, 
-            nome_turma: student.nome_turma, 
-            usuario: currentUser
-        }, { onConflict: 'ra,data_presenca' });
-
-        if (error) {
-            showToast("Erro ao salvar presença", "error");
-            console.error(error);
-        } else {
-            // 2. Sincroniza a memória local (allAttendances)
-            const index = allAttendances.findIndex(a => a.ra === ra && a.data_presenca === dKey);
-            
-            if (index !== -1) {
-                allAttendances[index].presente = val;
-            } else {
-                allAttendances.push({ ra, data_presenca: dKey, presente: val });
-            }
-            
-            showToast(val ? "Presente" : "Ausente", "success");
-        }
-    }
-
-   // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
-    async function massAssign(field, value) {
-    if (selectedStudentsForAssign.size === 0) {
-        return alert("Por favor, selecione ao menos um aluno na lista abaixo!");
-    }
-
-    if (!value) return alert("Por favor, insira um valor para atribuir.");
-
-    const confirmacao = confirm(`Deseja aplicar "${value}" no campo "${field}" para ${selectedStudentsForAssign.size} alunos?`);
-    if (!confirmacao) return;
-
-    showToast("Atualizando banco de dados...", "info");
-
-    const ids = Array.from(selectedStudentsForAssign);
-    
-    // Converte para número se o campo for 'grupo'
-    const finalValue = field === 'grupo' ? parseInt(value) : value;
-
-    const { error } = await _supabase
-        .from('students')
-        .update({ [field]: finalValue })
-        .in('id', ids);
+    const { error } = await _supabase.from('attendance').upsert({
+        ra: ra, 
+        data_presenca: dKey, 
+        disciplina: currentLab, // REGISTRA O LAB ATUAL
+        presente: val, 
+        nome_aluno: student.nome_aluno, 
+        nome_turma: student.nome_turma, 
+        usuario: currentUser
+    }, { onConflict: 'ra,data_presenca,disciplina' });
 
     if (error) {
-        console.error("Erro na atribuição:", error);
-        showToast("Erro ao atualizar: " + error.message, "error");
+        showToast("Erro ao salvar presença", "error");
     } else {
-        showToast("Atualização concluída!", "success");
+        // Atualiza memória local
+        const index = allAttendances.findIndex(a => a.ra === ra && a.data_presenca === dKey && a.disciplina === currentLab);
+        if (index !== -1) allAttendances[index].presente = val;
+        else allAttendances.push({ ra, data_presenca: dKey, disciplina: currentLab, presente: val });
+        
+        showToast(`${val ? 'Presente' : 'Ausente'} em ${currentLab.toUpperCase()}`, "success");
+    }
+}
+
+   // --- FUNÇÕES DE ATRIBUIÇÃO EM MASSA ---
+async function massAssign(field, value) {
+    if (selectedStudentsForAssign.size === 0) return alert("Selecione alunos!");
+    if (!value && field === 'grupo') return alert("Insira um grupo!");
+
+    showLoading("Gravando alterações...");
+
+    try {
+        const payloads = Array.from(selectedStudentsForAssign).map(raSelecionado => {
+            // AGORA BUSCAMOS PELO RA, GARANTINDO QUE VAI ACHAR O ALUNO
+            const s = allStudents.find(x => String(x.ra).trim() === String(raSelecionado).trim());
+            if (!s) return null;
+
+            // Usa a função segura que criamos na etapa anterior
+            const currentAssign = getStudentAssignment(s.ra);
+
+            return {
+                ra_aluno: String(s.ra).trim(),
+                disciplina: currentLab,
+                lado: field === 'parte_sala' ? value : currentAssign.lado,
+                grupo: field === 'grupo' ? (value ? parseInt(value) : null) : currentAssign.grupo
+            };
+        }).filter(p => p !== null);
+
+        // A GRANDE TRAVA: Se a lista estiver vazia, ele cancela e te avisa!
+        if (payloads.length === 0) {
+            alert("❌ Erro grave: Nenhum aluno válido foi encontrado para envio.");
+            hideLoading();
+            return;
+        }
+
+        console.log("Enviando para o banco os seguintes dados:", payloads);
+
+        const { data, error } = await _supabase
+            .from('lab_assignments')
+            .upsert(payloads, { onConflict: 'ra_aluno,disciplina' })
+            .select(); // <--- ADICIONE ESTA LINHA AQUI!
+
+        if (error) throw error;
+      console.log("📥 O que o Supabase REALMENTE gravou:", data);
+
+        showToast("✅ Salvo no banco!", "success");
         selectedStudentsForAssign.clear();
-        await refreshData(); 
         closeAssignRoomModal();
+        
+        // Atualiza os dados na tela
+        await refreshData(); 
+
+    } catch (err) {
+        console.error("Erro na atribuição:", err);
+        alert("Erro ao salvar: " + err.message);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -820,29 +2133,37 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     
     // --- AUXILIARES ---
     function applyFilters() {
-        const sede = document.getElementById('filter-sede')?.value || 'todos';
-        const serie = document.getElementById('filter-serie')?.value || 'todos';
-        const turma = document.getElementById('filter-turno')?.value || 'todos';
-        const parte = document.getElementById('filter-parte-sala')?.value || 'todos';
-        const search = document.getElementById('search-nome')?.value.toLowerCase() || '';
+    const sede = document.getElementById('filter-sede')?.value || 'todos';
+    const serie = document.getElementById('filter-serie')?.value || 'todos';
+    const turma = document.getElementById('filter-turno')?.value || 'todos';
+    const parte = document.getElementById('filter-parte-sala')?.value || 'todos';
+    const search = document.getElementById('search-nome')?.value.toLowerCase() || '';
 
-        // 1. Atualiza os dropdowns dinamicamente para encadeamento
-        updateFilterOptions('management', { sede, serie });
+    // 1. Atualiza os dropdowns dinamicamente para encadeamento
+    updateFilterOptions('management', { sede, serie });
 
-        // 2. Filtra a lista principal
-        filteredStudents = allStudents.filter(s => {
-            const mSede = sede === 'todos' || s.sede === sede;
-            const mSerie = serie === 'todos' || s.serie === serie;
-            const mTurma = turma === 'todos' || s.nome_turma === turma;
-            const mSearch = s.nome_aluno.toLowerCase().includes(search);
-            let mParte = true;
-            if(parte === 'nao-atribuido') mParte = !s.parte_sala;
-            else if(parte !== 'todos') mParte = s.parte_sala === parte;
-            
-            return mSede && mSerie && mTurma && mSearch && mParte;
-        });
-        renderStudentList();
-    }
+    // 2. Filtra a lista principal
+    filteredStudents = allStudents.filter(s => {
+        const mSede = sede === 'todos' || s.sede === sede;
+        const mSerie = serie === 'todos' || s.serie === serie;
+        const mTurma = turma === 'todos' || s.nome_turma === turma;
+        const mSearch = s.nome_aluno.toLowerCase().includes(search);
+        
+        // --- BUSCA O VÍNCULO DO LAB ATUAL PARA O FILTRO ---
+       const assign = getStudentAssignment(s.ra);
+
+        let mParte = true;
+        if (parte === 'nao-atribuido') {
+            mParte = !assign.lado; // Verifica se o lado está vazio no lab atual
+        } else if (parte !== 'todos') {
+            mParte = assign.lado === parte; // Filtra pelo lado A ou B do lab atual
+        }
+        
+        return mSede && mSerie && mTurma && mSearch && mParte;
+    });
+
+    renderStudentList();
+}
 
    function updateFilterOptions(ctx, currentFilters = {}) {
         const prefix = ctx === 'management' ? 'filter' : 'attendance-filter';
@@ -887,6 +2208,7 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
     const cont = document.getElementById('student-list');
     const count = document.getElementById('student-count');
     if(!cont) return;
+    
     count.innerText = filteredStudents.length;
 
     cont.innerHTML = `
@@ -896,40 +2218,104 @@ cont.innerHTML = list.sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno)).m
                     <th class="p-3 text-left w-12">#</th>
                     <th class="p-3 text-left">Nome</th>
                     <th class="p-3 text-left">Turma</th>
-                    <th class="p-3 text-left">Lado/G</th>
+                    <th class="p-3 text-left">Lado/G (${currentLab.toUpperCase()})</th>
                     <th class="p-3 text-center">Ações</th>
                 </tr>
             </thead>
             <tbody>
                 ${filteredStudents
                     .sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno))
-                    .map((s, index) => `
-                    <tr class="border-b border-slate-700 hover:bg-slate-700/30">
-                        <td class="p-3 text-slate-500 font-mono text-sm">${index + 1}</td>
-                        <td class="p-3">${s.nome_aluno}</td>
-                        <td class="p-3 text-sm">${s.nome_turma}</td>
-                        <td class="p-3 text-sm">${s.parte_sala || '-'}${s.grupo ? '/G'+s.grupo : ''}</td>
-                        <td class="p-3 text-center">
-                            <button onclick="openEditModal('${s.ra}')" class="text-blue-400 mr-3">✏️</button>
-                            <button onclick="deleteStudent('${s.id}')" class="text-red-400">🗑️</button>
-                        </td>
-                    </tr>
-                `).join('')}
+                    .map((s, index) => {
+                        
+                        // BUSCA O VÍNCULO USANDO OS NOMES EXATOS DO SEU BANCO
+                       // Localize este trecho dentro de renderStudentList e substitua:
+const assign = getStudentAssignment(s.ra);
+
+                        return `
+                        <tr class="border-b border-slate-700 hover:bg-slate-700/30">
+                            <td class="p-3 text-slate-500 font-mono text-sm">${index + 1}</td>
+                            <td class="p-3">
+                                <p class="font-medium">${s.nome_aluno}</p>
+                                <p class="text-[10px] text-slate-500 uppercase">${s.sede}</p>
+                            </td>
+                            <td class="p-3 text-sm">${s.nome_turma}</td>
+                            
+                            <td class="p-3 text-sm">
+                                <span class="px-2 py-1 rounded ${assign.lado ? 'bg-blue-900/40 text-blue-400' : 'text-slate-600'}">
+                                    ${assign.lado || '-'}
+                                </span>
+                                <span class="ml-1 font-bold ${assign.grupo ? 'text-emerald-400' : 'text-slate-600'}">
+                                    ${assign.grupo ? 'G' + assign.grupo : ''}
+                                </span>
+                            </td>
+
+                            <td class="p-3 text-center">
+                                <button onclick="openEditModal('${s.ra}')" title="Editar" class="text-blue-400 hover:text-blue-300 mr-3 transition-colors">
+                                    ✏️
+                                </button>
+                                ${currentLab === 'maker' ? `
+                                    <button onclick="deleteStudent('${s.id}')" title="Excluir" class="text-red-400 hover:text-red-300 transition-colors">
+                                        🗑️
+                                    </button>
+                                ` : '<span title="Apenas Admin Maker pode excluir" class="opacity-20 grayscale cursor-not-allowed">🗑️</span>'}
+                            </td>
+                        </tr>`;
+                    }).join('')}
             </tbody>
         </table>`;
 }
 
-       function openEditModal(ra) {
+     function openEditModal(ra) {
+    // 1. Localiza os dados fixos do aluno na lista global
     const s = allStudents.find(x => x.ra === ra);
-    document.getElementById('modal-title').innerText = "Editar Aluno";
+    if (!s) return showToast("Aluno não encontrado", "error");
+
+    // 2. Busca o vínculo específico do laboratório atual (Maker ou Ciências)
+    const assign = allAssignments.find(a => 
+        a.ra_aluno === ra && 
+        a.disciplina === currentLab
+    ) || { lado: null, grupo: null };
+
+    // 3. Atualiza o título do Modal conforme o contexto
+    document.getElementById('modal-title').innerText = `Editar Aluno (${currentLab.toUpperCase()})`;
     
-    // Preenche os dropdowns primeiro
+    // 4. Preenche os dropdowns de Sede/Série/Turma com os dados do aluno
     populateModalDropdowns(s);
     
+    // 5. Preenche os campos de texto e selects do formulário
     document.getElementById('m-nome').value = s.nome_aluno;
     document.getElementById('m-ra').value = s.ra;
-    document.getElementById('m-parte').value = s.parte_sala || '';
-    document.getElementById('m-grupo').value = s.grupo || '';
+    document.getElementById('m-parte').value = assign.lado || '';
+    document.getElementById('m-grupo').value = assign.grupo || '';
+
+    // --- 6. LÓGICA DE PERMISSÕES (TRAVA DE SEGURANÇA) ---
+    const isCiencias = (currentLab === 'ciencias');
+
+    // Campos Cadastrais: Bloqueados se for Ciências, Liberados se for Maker
+    const camposFixos = ['m-nome', 'm-ra', 'm-sede', 'm-serie', 'm-turma'];
+    camposFixos.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.disabled = isCiencias;
+            if (isCiencias) {
+                el.classList.add('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+            } else {
+                el.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+            }
+        }
+    });
+
+    // Campos de Atribuição (Lado e Grupo): SEMPRE LIBERADOS para ambos os labs
+    const camposLab = ['m-parte', 'm-grupo'];
+    camposLab.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.disabled = false; // Garante que Lado A/B esteja disponível
+            el.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-slate-800');
+        }
+    });
+
+    // 7. Exibe o modal na tela
     document.getElementById('student-modal').classList.remove('hidden');
 }
 
@@ -948,13 +2334,12 @@ function quickSelect(status) {
     const checkboxes = document.querySelectorAll('.student-checkbox');
     checkboxes.forEach(cb => {
         cb.checked = status;
-        const id = cb.getAttribute('data-id');
-        if (status) selectedStudentsForAssign.add(id);
-        else selectedStudentsForAssign.delete(id);
+        const ra = cb.getAttribute('data-ra');
+        if (status) selectedStudentsForAssign.add(ra);
+        else selectedStudentsForAssign.delete(ra);
     });
 }
 
-// Função para selecionar a primeira metade da lista (ordem alfabética)
 function quickSelectHalf() {
     quickSelect(false); // Limpa tudo primeiro
     const checkboxes = document.querySelectorAll('.student-checkbox');
@@ -962,8 +2347,8 @@ function quickSelectHalf() {
     
     for (let i = 0; i < half; i++) {
         checkboxes[i].checked = true;
-        const id = checkboxes[i].getAttribute('data-id');
-        selectedStudentsForAssign.add(id);
+        const ra = checkboxes[i].getAttribute('data-ra');
+        selectedStudentsForAssign.add(ra);
     }
 }
 
@@ -972,53 +2357,554 @@ function quickSelectHalf() {
     const listCont = document.getElementById('assign-list');
     if (!listCont) return;
 
+    // Limpa a seleção anterior ao abrir o modal
     selectedStudentsForAssign.clear(); 
 
     if (filteredStudents.length === 0) {
-        listCont.innerHTML = `<p class="text-slate-500 text-center py-4">Nenhum aluno filtrado para atribuir.</p>`;
+        listCont.innerHTML = `<p class="text-slate-500 text-center py-4 italic">Nenhum aluno filtrado na tela para atribuir.</p>`;
     } else {
-        // Ordena antes de renderizar para garantir a ordem alfabética na seleção de metade
+        // Ordena a lista filtrada por nome para facilitar a visualização
         const sortedList = [...filteredStudents].sort((a, b) => a.nome_aluno.localeCompare(b.nome_aluno));
         
-        // Inserção dos botões de seleção rápida
+        // Inserção dos botões de seleção rápida e cabeçalho informativo
         listCont.innerHTML = `
-            <div class="flex flex-wrap gap-2 mb-4 sticky top-0 bg-slate-900 p-2 rounded-lg z-10 border border-slate-700">
-                <button onclick="quickSelect(true)" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs font-bold">✅ Todos</button>
-                <button onclick="quickSelectHalf()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-1 px-2 rounded text-xs font-bold">🌓 Metade</button>
-                <button onclick="quickSelect(false)" class="flex-1 bg-red-900/30 text-red-400 py-1 px-2 rounded text-xs font-bold border border-red-900/50">❌ Limpar</button>
+            <div class="flex flex-wrap gap-2 mb-4 sticky top-0 bg-slate-900 p-2 rounded-lg z-10 border border-slate-700 shadow-md">
+                <button onclick="quickSelect(true)" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-1.5 px-2 rounded text-[10px] font-black uppercase tracking-wider">✅ Todos</button>
+                <button onclick="quickSelectHalf()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-1.5 px-2 rounded text-[10px] font-black uppercase tracking-wider">🌓 Metade</button>
+                <button onclick="quickSelect(false)" class="flex-1 bg-red-900/30 text-red-400 py-1.5 px-2 rounded text-[10px] font-black uppercase tracking-wider border border-red-900/50">❌ Limpar</button>
             </div>
+            
             <div id="check-list-container" class="space-y-1">
-                ${sortedList.map(s => `
-                    <div class="flex items-center gap-3 p-2 border-b border-slate-700 hover:bg-slate-700/30 transition-colors">
-                        <input type="checkbox" 
-                               class="student-checkbox w-4 h-4 cursor-pointer" 
-                               data-id="${s.id}"
-                               onchange="this.checked ? selectedStudentsForAssign.add('${s.id}') : selectedStudentsForAssign.delete('${s.id}')">
-                        <span class="text-white text-sm">${s.nome_aluno} <span class="text-slate-500 text-xs">(${s.nome_turma})</span></span>
-                    </div>
-                `).join('')}
+                ${sortedList.map(s => {
+                    // Busca o vínculo atual do aluno para o laboratório logado (Maker ou Ciências)
+                   // Substitua dentro da função openAssignRoomModal()
+const assign = getStudentAssignment(s.ra);
+                    const hasData = assign.lado || assign.grupo;
+
+                    return `
+                        <div class="flex items-center gap-3 p-2 border-b border-slate-700/50 hover:bg-slate-700/30 transition-all">
+                            <input type="checkbox" 
+       class="student-checkbox w-4 h-4 cursor-pointer accent-blue-500" 
+       data-ra="${s.ra}"
+       onchange="this.checked ? selectedStudentsForAssign.add('${s.ra}') : selectedStudentsForAssign.delete('${s.ra}')">
+                            
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between flex-1 gap-1">
+                                <div class="flex flex-col">
+                                    <span class="text-white text-sm font-medium leading-tight">${s.nome_aluno}</span>
+                                    <span class="text-slate-500 text-[9px] uppercase tracking-tighter">${s.nome_turma} | RA: ${s.ra}</span>
+                                </div>
+
+                                <div class="flex items-center">
+                                    <span class="text-[10px] px-2 py-0.5 rounded font-bold ${hasData ? 'bg-blue-900/40 text-blue-400 border border-blue-800/30' : 'text-slate-600 italic'}">
+                                        ${hasData ? 
+                                            `${assign.lado || '-'}${assign.grupo ? ' / G'+assign.grupo : ''}` : 
+                                            'sem grupo'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
             </div>
         `;
     }
     
+    // Abre o modal removendo a classe hidden
     document.getElementById('assign-room-modal').classList.remove('hidden');
 }
 
     // --- INICIALIZAÇÃO ---
-    window.onload = () => {
-        if(sessionStorage.getItem('isAuth') === 'true') {
-            isAuthenticated = true;
-            refreshData().then(() => renderManagementScreen());
-        } else {
-            showLoginScreen();
-        }
-    };
+   window.onload = () => {
+    const isAuth = sessionStorage.getItem('isAuth');
+    
+    if (isAuth === 'true') {
+        // Se já estava logado, carrega os dados e mostra a gestão
+        isAuthenticated = true;
+        currentLab = sessionStorage.getItem('currentLab') || 'maker';
+        currentUser = sessionStorage.getItem('userRole') || 'admin_maker';
+        
+        // O refreshData chamará o showLoading() automaticamente
+        refreshData().then(() => {
+            switchScreen('management');
+        });
+    } else {
+        // Se NÃO está logado, apenas mostra a tela de login
+        // SEM chamar o refreshData antes da hora
+        showLoginScreen();
+        hideLoading(); // Garante que o overlay suma se aparecer por erro
+    }
+};
 
     // (Funções de utilidade como formatDate, handleLogout, close modals seguem o padrão)
     function formatDate(d) { return d.toLocaleDateString('pt-BR'); }
     function closeStudentModal() { document.getElementById('student-modal').classList.add('hidden'); }
     function closeAssignRoomModal() { document.getElementById('assign-room-modal').classList.add('hidden'); }
-    function handleLogout() { sessionStorage.clear(); location.reload(); }
+   function handleLogout() {
+    // 1. Limpa todos os dados da sessão do navegador
+    sessionStorage.clear(); 
+    
+    // 2. Reseta as variáveis de estado globais para o padrão de segurança
+    isAuthenticated = false;
+    currentUser = null;
+    currentLab = 'maker'; // Volta para o padrão
+    currentScreen = 'login';
+    
+    // 3. Limpa listas temporárias da memória
+    allStudents = [];
+    allAssignments = [];
+    allAttendances = [];
+    
+    // 4. Feedback visual e redirecionamento
+    showToast("Sessão encerrada com sucesso", "info");
+    showLoginScreen();
+    
+    // 5. Opcional: Força um recarregamento da página para garantir limpeza total do cache
+    // window.location.reload(); 
+}
+    // --- MÓDULO DE ACOMPANHAMENTO: GESTÃO DE PROJETOS E ETAPAS ---
+
+function openAdminProjectsModal() {
+    selectedAdminProjectId = null;
+    document.getElementById('admin-proj-lab').innerText = currentLab;
+    
+    // Popula as séries disponíveis automaticamente baseando-se nos alunos
+    const series = [...new Set(allStudents.map(s => s.serie))].filter(Boolean).sort();
+    document.getElementById('new-project-serie').innerHTML = '<option value="">Selecione a Série...</option>' + series.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    document.getElementById('admin-projects-modal').classList.remove('hidden');
+    renderAdminProjects();
+    renderAdminStages();
+}
+
+function closeAdminProjectsModal() {
+    document.getElementById('admin-projects-modal').classList.add('hidden');
+}
+
+function renderAdminProjects() {
+    const list = document.getElementById('admin-project-list');
+    const myProjects = allProjects.filter(p => p.disciplina === currentLab);
+    
+    if (myProjects.length === 0) {
+        list.innerHTML = `<p class="text-slate-500 text-xs italic p-4 text-center">Nenhum projeto cadastrado.</p>`;
+        return;
+    }
+
+    list.innerHTML = myProjects.sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).map(p => {
+        const isSelected = p.id === selectedAdminProjectId;
+        return `
+            <div class="flex justify-between items-center p-3 rounded-lg border transition-all ${isSelected ? 'bg-blue-900/40 border-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'} cursor-pointer" onclick="selectAdminProject('${p.id}', '${p.nome_projeto}')">
+                <div class="flex flex-col truncate pr-2">
+                    <span class="text-white text-sm font-medium">${p.nome_projeto}</span>
+                    <span class="text-slate-500 text-[10px] uppercase tracking-wider">${p.serie || 'Série não definida'}</span>
+                </div>
+                <button onclick="event.stopPropagation(); deleteProject('${p.id}')" class="text-red-400 hover:text-red-300 px-2">🗑️</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectAdminProject(id, nome) {
+    selectedAdminProjectId = id;
+    document.getElementById('selected-project-title').innerText = `✏️ Editando: ${nome}`;
+    renderAdminProjects(); // Re-renderiza para destacar o selecionado
+    renderAdminStages();
+}
+
+function renderAdminStages() {
+    const overlay = document.getElementById('stage-empty-state');
+    const list = document.getElementById('admin-stage-list');
+    const inputOrdem = document.getElementById('new-stage-order');
+    
+    if (!selectedAdminProjectId) {
+        overlay.classList.remove('hidden');
+        return;
+    }
+    
+    overlay.classList.add('hidden');
+    const myStages = allStages.filter(s => s.projeto_id === selectedAdminProjectId).sort((a, b) => a.ordem - b.ordem);
+    
+    // Sugere o próximo número de ordem automaticamente
+    inputOrdem.value = myStages.length > 0 ? myStages[myStages.length - 1].ordem + 1 : 1;
+
+    if (myStages.length === 0) {
+        list.innerHTML = `<p class="text-slate-500 text-xs italic p-4 text-center border border-dashed border-slate-700 rounded-lg">Nenhuma etapa. Adicione a primeira acima!</p>`;
+        return;
+    }
+
+    list.innerHTML = myStages.map(s => `
+        <div class="flex justify-between items-center p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-emerald-500/50 transition-colors">
+            <div class="flex items-center gap-3">
+                <span class="bg-emerald-900/50 text-emerald-400 font-black w-6 h-6 rounded flex items-center justify-center text-xs">${s.ordem}</span>
+                <span class="text-white text-sm">${s.nome_etapa}</span>
+            </div>
+            <button onclick="deleteStage('${s.id}')" class="text-red-400 hover:text-red-300 px-2">✕</button>
+        </div>
+    `).join('');
+}
+
+async function saveProject() {
+    const inputName = document.getElementById('new-project-name');
+    const inputSerie = document.getElementById('new-project-serie');
+    const nome = inputName.value.trim();
+    const serie = inputSerie.value;
+
+    if (!serie) return showToast("Selecione a série do projeto!", "error");
+    if (!nome) return showToast("Digite o nome do projeto!", "error");
+
+    showLoading("Salvando projeto...");
+    const payload = { 
+        nome_projeto: nome, 
+        serie: serie, // Salva a série no Supabase
+        ano: new Date().getFullYear().toString(), 
+        disciplina: currentLab 
+    };
+
+    try {
+        const { data, error } = await _supabase.from('projetos').insert([payload]).select();
+        if (error) throw error;
+        
+        allProjects.push(data[0]);
+        inputName.value = '';
+        renderAdminProjects();
+        showToast("Projeto criado!", "success");
+    } catch (err) {
+        showToast("Erro ao criar projeto", "error");
+    } finally {
+        hideLoading();
+    }
+}
+
+async function saveStage() {
+    const inputName = document.getElementById('new-stage-name');
+    const inputOrder = document.getElementById('new-stage-order');
+    const nome = inputName.value.trim();
+    const ordem = parseInt(inputOrder.value);
+
+    if (!nome || isNaN(ordem)) return showToast("Preencha nome e número da etapa", "error");
+    if (!selectedAdminProjectId) return showToast("Selecione um projeto antes", "error");
+
+    showLoading("Salvando etapa...");
+    const payload = { projeto_id: selectedAdminProjectId, nome_etapa: nome, ordem: ordem };
+
+    try {
+        const { data, error } = await _supabase.from('etapas_projeto').insert([payload]).select();
+        if (error) throw error;
+        
+        allStages.push(data[0]);
+        inputName.value = '';
+        renderAdminStages();
+    } catch (err) {
+        showToast("Erro ao criar etapa", "error");
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteProject(id) {
+    if(!confirm("Certeza? Isso apagará o projeto e TODAS as etapas/notas dele!")) return;
+    showLoading("Excluindo...");
+    const { error } = await _supabase.from('projetos').delete().eq('id', id);
+    hideLoading();
+    if (error) return showToast("Erro ao excluir", "error");
+    
+    allProjects = allProjects.filter(p => p.id !== id);
+    if(selectedAdminProjectId === id) selectedAdminProjectId = null;
+    renderAdminProjects();
+    renderAdminStages();
+    showToast("Projeto apagado", "success");
+}
+
+async function deleteStage(id) {
+    showLoading("Excluindo...");
+    const { error } = await _supabase.from('etapas_projeto').delete().eq('id', id);
+    hideLoading();
+    if (error) return showToast("Erro ao excluir", "error");
+    
+    allStages = allStages.filter(s => s.id !== id);
+    renderAdminStages();
+}
+    // =====================================================================
+// --- MÓDULO DE ACOMPANHAMENTO: TELA PRINCIPAL (PROFESSOR) ---
+// =====================================================================
+
+function renderTrackingScreen() {
+    currentScreen = 'tracking';
+    const app = document.getElementById('app');
+    
+    // Cores dinâmicas para distinguir visualmente do resto do sistema
+    const themeColor = 'border-purple-500';
+    const bgColor = 'bg-purple-600';
+
+    app.innerHTML = `
+        <div class="min-h-full p-4 md:p-8">
+            <div class="max-w-7xl mx-auto">
+                ${renderNavigationHeader()}
+                
+                <div class="bg-slate-800 p-6 rounded-xl border ${themeColor} mb-6 space-y-6 shadow-xl transition-colors duration-500">
+                    <div class="flex flex-col md:flex-row justify-between items-center gap-4 border-b border-slate-700 pb-4">
+                        <h2 class="text-white font-bold text-xl flex items-center gap-2">
+                            <span class="${bgColor} w-2 h-6 rounded-full"></span>
+                            Acompanhamento de Equipes - <span class="uppercase">${currentLab}</span>
+                        </h2>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Sede</label>
+                            <select id="trk-sede" onchange="updateTrackingFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Série</label>
+                            <select id="trk-serie" onchange="updateTrackingFilters()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Turma</label>
+                            <select id="trk-turma" onchange="applyTrackingList()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500"></select>
+                        </div>
+                        <div>
+                            <label class="text-slate-400 text-[10px] uppercase font-bold mb-1 block">Lado</label>
+                            <select id="trk-lado" onchange="applyTrackingList()" class="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-purple-500">
+                                <option value="todos">Todos</option>
+                                <option value="A">Lado A</option>
+                                <option value="B">Lado B</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-purple-400 text-[10px] uppercase font-black mb-1 block drop-shadow-md">Projeto Vigente</label>
+                            <select id="trk-projeto" onchange="applyTrackingList()" class="w-full p-2 bg-purple-900/30 border border-purple-500/50 rounded-lg text-white font-bold text-xs outline-none focus:border-purple-400"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tracking-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                </div>
+            </div>
+        </div>
+    `;
+
+    populateTrackingInitialFilters();
+}
+
+function populateTrackingInitialFilters() {
+    const sedes = [...new Set(allStudents.map(s => s.sede))].sort();
+    const series = [...new Set(allStudents.map(s => s.serie))].sort();
+    
+    document.getElementById('trk-sede').innerHTML = sedes.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('trk-serie').innerHTML = series.map(s => `<option value="${s}">${s}</option>`).join('');
+    
+    updateTrackingFilters();
+}
+
+function updateTrackingFilters() {
+    const s = document.getElementById('trk-sede').value;
+    const sr = document.getElementById('trk-serie').value;
+    
+    // 1. Atualiza Turmas daquela série
+    const listaFiltrada = allStudents.filter(x => x.sede === s && x.serie === sr);
+    const turmas = [...new Set(listaFiltrada.map(x => x.nome_turma))].sort();
+    
+    const selectTurma = document.getElementById('trk-turma');
+    const turmaAnterior = selectTurma.value;
+    selectTurma.innerHTML = turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (turmas.includes(turmaAnterior)) selectTurma.value = turmaAnterior;
+
+    // 2. Atualiza PROJETOS exclusivos daquela série (A Grande Sacada)
+    const projSelect = document.getElementById('trk-projeto');
+    const projetosDaSerie = allProjects.filter(p => p.serie === sr && p.disciplina === currentLab);
+    
+    if (projetosDaSerie.length === 0) {
+        projSelect.innerHTML = '<option value="">Nenhum projeto cadastrado...</option>';
+        projSelect.disabled = true;
+    } else {
+        projSelect.disabled = false;
+        projSelect.innerHTML = projetosDaSerie.sort((a,b) => new Date(a.created_at) - new Date(b.created_at)).map(p => `<option value="${p.id}">${p.nome_projeto}</option>`).join('');
+    }
+
+    // 3. Renderiza os cards
+    applyTrackingList();
+}
+
+function applyTrackingList() {
+    const sede = document.getElementById('trk-sede').value;
+    const serie = document.getElementById('trk-serie').value;
+    const turma = document.getElementById('trk-turma').value;
+    const ladoFiltro = document.getElementById('trk-lado').value;
+    const projetoId = document.getElementById('trk-projeto').value;
+    const cont = document.getElementById('tracking-container');
+
+    if (!projetoId) {
+        cont.innerHTML = `
+            <div class="col-span-full text-center py-20 bg-slate-900/50 rounded-2xl border border-dashed border-slate-700">
+                <p class="text-white font-bold text-lg">Sem Projetos Ativos</p>
+                <p class="text-slate-500 text-sm mt-2">Peça ao Administrador para cadastrar um projeto para o <b class="text-purple-400">${serie}</b> na Engrenagem ⚙️ Projetos.</p>
+            </div>`;
+        return;
+    }
+
+    // Agrupa os alunos por Equipe
+    const alunosTurma = allStudents.filter(s => s.sede === sede && s.serie === serie && s.nome_turma === turma);
+    const equipes = {};
+    
+    alunosTurma.forEach(aluno => {
+        const assign = getStudentAssignment(aluno.ra);
+        if (!assign.grupo || !assign.lado) return; // Ignora quem não tem grupo
+        if (ladoFiltro !== 'todos' && assign.lado !== ladoFiltro) return;
+
+        const key = `${assign.lado}-${assign.grupo}`;
+        if (!equipes[key]) equipes[key] = { lado: assign.lado, grupo: assign.grupo, nomes: [] };
+        equipes[key].nomes.push(aluno.nome_aluno);
+    });
+
+    const chavesOrdenadas = Object.keys(equipes).sort();
+
+    if (chavesOrdenadas.length === 0) {
+        cont.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 italic">Nenhuma equipe formada nesta turma. Use a aba "Gestão" para atribuir os alunos.</div>`;
+        return;
+    }
+
+    // Busca as etapas estruturais deste projeto
+    const etapasDoProjeto = allStages.filter(e => e.projeto_id === projetoId).sort((a,b) => a.ordem - b.ordem);
+
+    cont.innerHTML = chavesOrdenadas.map(k => {
+        const eq = equipes[k];
+        const integrantes = eq.nomes.sort().join(', ');
+        
+        // Busca onde essa equipe parou
+        const prog = allProgress.find(p => 
+            p.sede === sede && p.serie === serie && p.nome_turma === turma && 
+            p.lado === eq.lado && String(p.grupo) === String(eq.grupo) && 
+            p.projeto_id === projetoId && p.disciplina === currentLab
+        );
+        const etapaAtualId = prog ? prog.etapa_atual_id : null;
+
+        return renderTrackingCard(eq.lado, eq.grupo, integrantes, projetoId, etapasDoProjeto, etapaAtualId);
+    }).join('');
+}
+
+function renderTrackingCard(lado, grupo, integrantes, projetoId, etapas, etapaAtualId) {
+    // Descobre em qual índice do array está a etapa salva no banco.
+    // Se não tiver progresso salvo, fica -1.
+    const etapaEncontradaIndex = etapas.findIndex(e => e.id === etapaAtualId);
+
+    const etapasHtml = etapas.map((etapa, idx) => {
+        const isCompleted = idx <= etapaEncontradaIndex; // Se está antes ou na bolinha atual, fica pintada
+        
+        // --- A MÁGICA DE DESMARCAR AQUI ---
+        // Qual será a etapa enviada ao banco se o professor clicar nesta bolinha?
+        let targetEtapaId = `'${etapa.id}'`; 
+        
+        // Se a bolinha clicada for EXATAMENTE a última que está ativa, significa que ele quer "desfazer"
+        if (etapa.id === etapaAtualId) {
+            // Se for a etapa 2 em diante, retrocede para a anterior. Se for a etapa 1, manda 'null' (zera tudo)
+            targetEtapaId = idx > 0 ? `'${etapas[idx - 1].id}'` : null;
+        }
+        // ----------------------------------
+
+        const bolinhaClass = isCompleted 
+            ? "bg-purple-500 text-white border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.5)] scale-110" 
+            : "bg-slate-800 text-slate-500 border-slate-600 hover:border-purple-400 hover:text-purple-400";
+            
+        // A linha conecta a bolinha atual com a próxima
+        const linhaClass = (idx < etapas.length - 1) 
+            ? (idx < etapaEncontradaIndex ? "bg-purple-500" : "bg-slate-700") 
+            : "";
+
+        return `
+            <div class="flex flex-col items-center relative flex-1 group cursor-pointer" onclick="saveTeamProgress('${lado}', ${grupo}, '${projetoId}', ${targetEtapaId})">
+                <div class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-black z-10 transition-all duration-300 ${bolinhaClass}">
+                    ${isCompleted ? '✓' : etapa.ordem}
+                </div>
+                <div class="text-[9px] text-center mt-2 font-medium ${isCompleted ? 'text-purple-300 font-bold' : 'text-slate-500 group-hover:text-slate-300'} break-words px-1 leading-tight">
+                    ${etapa.nome_etapa}
+                </div>
+                ${idx < etapas.length - 1 ? `<div class="absolute top-4 left-1/2 w-full h-[2px] -z-0 transition-colors ${linhaClass}"></div>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="bg-slate-900 p-5 rounded-2xl border border-slate-700 hover:border-purple-500/50 transition-all shadow-lg flex flex-col h-full relative overflow-hidden">
+            ${etapaEncontradaIndex === etapas.length - 1 && etapas.length > 0 ? '<div class="absolute top-0 right-0 bg-purple-600 text-[9px] font-black px-3 py-1 rounded-bl-lg">CONCLUÍDO 🏆</div>' : ''}
+            
+            <div class="flex flex-col border-b border-slate-800 pb-3 mb-5 pr-8">
+                <h3 class="text-white font-black text-xl leading-none">LADO ${lado} - GRUPO ${grupo}</h3>
+                <p class="text-slate-500 text-[10px] mt-1 italic leading-tight line-clamp-2" title="${integrantes}">${integrantes}</p>
+            </div>
+            
+            <div class="flex justify-between items-start w-full mt-auto pt-2">
+                ${etapas.length > 0 ? etapasHtml : '<p class="text-xs text-slate-500 italic w-full text-center bg-slate-800/50 p-2 rounded">O admin ainda não inseriu as etapas deste projeto.</p>'}
+            </div>
+        </div>
+    `;
+}
+
+async function saveTeamProgress(lado, grupo, projetoId, etapaId) {
+    const sede = document.getElementById('trk-sede').value;
+    const serie = document.getElementById('trk-serie').value;
+    const turma = document.getElementById('trk-turma').value;
+
+    showLoading("Registrando...");
+
+    const payload = {
+        sede, 
+        serie, 
+        nome_turma: turma, 
+        lado, 
+        grupo: parseInt(grupo),
+        projeto_id: projetoId, 
+        etapa_atual_id: etapaId,
+        disciplina: currentLab, 
+        atualizado_por: currentUser
+    };
+
+    try {
+        const { data, error } = await _supabase
+            .from('progresso_equipes')
+            .upsert([payload], { onConflict: 'sede,serie,nome_turma,lado,grupo,projeto_id,disciplina' })
+            .select();
+
+        if (error) throw error;
+
+        // Atualiza a memória local para piscar na tela instantaneamente
+        const progIndex = allProgress.findIndex(p => 
+            p.sede === sede && p.serie === serie && p.nome_turma === turma && 
+            p.lado === lado && String(p.grupo) === String(grupo) && 
+            p.projeto_id === projetoId && p.disciplina === currentLab
+        );
+        
+        if (progIndex !== -1) {
+            allProgress[progIndex] = data[0];
+        } else {
+            allProgress.push(data[0]);
+        }
+
+        applyTrackingList(); // Recarrega os cards
+        showToast("Progresso salvo!", "success");
+
+    } catch (err) {
+        console.error(err);
+        showToast("Erro ao registrar progresso no banco.", "error");
+    } finally {
+        hideLoading();
+    }
+}
+    
+    // FERRAMENTA DE DIAGNÓSTICO
+async function debugSupabase() {
+    console.log("🔍 1. Buscando dados BRUTOS direto da tabela lab_assignments...");
+    
+    const { data, error } = await _supabase.from('lab_assignments').select('*');
+    
+    if (error) {
+        console.error("❌ ERRO AO LER SUPABASE:", error.message);
+    } else {
+        console.log("✅ DADOS NO SUPABASE:");
+        console.table(data);
+    }
+
+    console.log("🧠 2. O que o aplicativo tem na memória agora (allAssignments):", allAssignments);
+    console.log("👥 3. IDs dos alunos que você selecionou no Modal:", Array.from(selectedStudentsForAssign));
+}
     function showToast(m, t) { 
         const toast = document.createElement('div');
         toast.className = `toast ${t === 'success' ? 'bg-green-600' : 'bg-blue-600'}`;
