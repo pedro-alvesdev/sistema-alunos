@@ -3033,22 +3033,228 @@ function updateCalHorarioTurmas() {
 // Funções de Renderização Vazias (Preencheremos a lógica de DB e Projeção no próximo passo)
 function renderHorariosFixos() {
     const list = document.getElementById('lista-horarios-fixos');
-    list.innerHTML = `<p class="text-slate-500 italic p-4 text-center">Os horários aparecerão aqui...</p>`;
+    const meusHorarios = allSchedules.filter(s => s.disciplina === currentLab);
+    
+    if (meusHorarios.length === 0) {
+        list.innerHTML = `<p class="text-slate-500 italic p-4 text-center border border-dashed border-slate-700 rounded-lg">Nenhum horário fixo cadastrado.</p>`;
+        return;
+    }
+
+    const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+    list.innerHTML = meusHorarios.sort((a,b) => a.dia_semana - b.dia_semana).map(s => `
+        <div class="flex justify-between items-center bg-slate-800 p-3 rounded-lg border border-slate-700">
+            <div>
+                <p class="text-white font-bold text-sm">${s.nome_turma} <span class="text-slate-500 text-[10px] font-normal uppercase">(${s.sede})</span></p>
+                <p class="text-blue-400 text-xs font-bold uppercase mt-1">🗓️ Toda ${diasNomes[s.dia_semana]}</p>
+            </div>
+            <button onclick="deleteData('horario_aulas', '${s.id}', 'allSchedules', renderHorariosFixos)" class="text-red-400 hover:text-red-300">🗑️</button>
+        </div>
+    `).join('');
+}
+    async function deleteData(tabela, id, arrayGlobal, renderFunc) {
+    if(!confirm("Deseja excluir este item?")) return;
+    showLoading("Excluindo...");
+    const { error } = await _supabase.from(tabela).delete().eq('id', id);
+    hideLoading();
+    if(error) return showToast("Erro ao excluir", "error");
+    
+    window[arrayGlobal] = window[arrayGlobal].filter(item => item.id !== id);
+    renderFunc();
+    calcularPrevisaoTurma(); // Atualiza a aba diária se apagar um evento
 }
 
 function renderEventosGlobais() {
     const list = document.getElementById('lista-eventos-globais');
-    list.innerHTML = `<p class="text-slate-500 italic p-4 text-center">Os eventos aparecerão aqui...</p>`;
+    const meusEventos = allEvents.filter(s => s.disciplina === currentLab);
+    
+    if (meusEventos.length === 0) {
+        list.innerHTML = `<p class="text-slate-500 italic p-4 text-center border border-dashed border-slate-700 rounded-lg">Nenhum bloqueio/evento cadastrado.</p>`;
+        return;
+    }
+
+    const cores = { 'feriado': 'text-emerald-400', 'provas': 'text-red-400', 'ferias': 'text-blue-400', 'outros': 'text-amber-400' };
+
+    list.innerHTML = meusEventos.sort((a,b) => new Date(a.data_inicio) - new Date(b.data_inicio)).map(ev => {
+        const dtIni = ev.data_inicio.split('-').reverse().join('/');
+        const dtFim = ev.data_fim.split('-').reverse().join('/');
+        return `
+            <div class="flex justify-between items-center bg-slate-800 p-3 rounded-lg border border-slate-700">
+                <div>
+                    <p class="text-white font-bold text-sm flex items-center gap-2">
+                        <span class="${cores[ev.tipo] || 'text-white'} text-[10px] uppercase font-black bg-slate-900 px-2 py-1 rounded">${ev.tipo}</span>
+                        ${ev.titulo}
+                    </p>
+                    <p class="text-slate-400 text-xs mt-1">De ${dtIni} até ${dtFim}</p>
+                </div>
+                <button onclick="deleteData('calendario_eventos', '${ev.id}', 'allEvents', renderEventosGlobais)" class="text-red-400 hover:text-red-300">🗑️</button>
+            </div>
+        `;
+    }).join('');
 }
 
 function calcularPrevisaoTurma() {
+    const dateStr = document.getElementById('cal-dia-aula').value; // Formato YYYY-MM-DD
+    const sede = document.getElementById('cal-dia-sede').value;
+    const serie = document.getElementById('cal-dia-serie').value;
+    const turma = document.getElementById('cal-dia-turma').value;
     const painel = document.getElementById('painel-previsao-aula');
-    painel.innerHTML = `<p class="text-slate-500 italic">O motor de cálculo será carregado aqui...</p>`;
+
+    if (!dateStr || !sede || !serie || !turma) {
+        painel.innerHTML = `<p class="text-slate-500 italic">Selecione Data, Sede, Série e Turma para carregar a projeção.</p>`;
+        return;
+    }
+
+    // 1. Verifica se há log cadastrado exato para este dia e turma
+    const logHoje = allClassLogs.find(l => l.sede === sede && l.nome_turma === turma && l.data_aula === dateStr && l.disciplina === currentLab);
+
+    if (logHoje) {
+        let msg = logHoje.status === 'realizada' ? `<span class="text-emerald-400">✅ Aula Realizada (Lado ${logHoje.lado_presente})</span>` : `<span class="text-red-400">❌ Aula Cancelada</span>`;
+        painel.innerHTML = `
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-600 w-full">
+                <h4 class="text-white font-bold text-lg mb-2">Registro Encontrado</h4>
+                <p class="text-sm font-bold bg-slate-900 py-3 rounded-lg border border-slate-700 mb-4">${msg}</p>
+                <p class="text-xs text-slate-400 mb-4">Você pode sobrepor esse registro lançando um novo abaixo.</p>
+                ${renderBotoesAcaoAula(dateStr, sede, serie, turma)}
+            </div>`;
+        return;
+    }
+
+    // 2. Verifica se a data cai em algum Evento/Feriado/Provas
+    const eventoAtivo = allEvents.find(ev => ev.disciplina === currentLab && dateStr >= ev.data_inicio && dateStr <= ev.data_fim);
+    
+    if (eventoAtivo) {
+        painel.innerHTML = `
+            <div class="bg-amber-900/20 p-6 rounded-xl border border-amber-500/30 w-full">
+                <h4 class="text-amber-400 font-bold text-lg mb-2">Bloqueio de Calendário</h4>
+                <p class="text-white text-sm">O sistema identificou o evento: <b>${eventoAtivo.titulo}</b>.</p>
+                <p class="text-xs text-slate-400 mt-4 mb-4">Se a aula ocorreu mesmo assim (ex: reposição), use os botões abaixo.</p>
+                ${renderBotoesAcaoAula(dateStr, sede, serie, turma)}
+            </div>`;
+        return;
+    }
+
+    // 3. ALGORITMO: Procura quem foi o último a ter aula
+    const logsAnteriores = allClassLogs.filter(l => l.sede === sede && l.nome_turma === turma && l.data_aula < dateStr && l.disciplina === currentLab && l.status === 'realizada');
+    
+    let proximoLado = 'A'; // Padrão se nunca tiveram aula
+    let msgUltimaAula = "Nenhum registro anterior encontrado. Iniciando ciclo.";
+
+    if (logsAnteriores.length > 0) {
+        // Pega a aula mais recente ordenando por data
+        logsAnteriores.sort((a,b) => new Date(b.data_aula) - new Date(a.data_aula));
+        const ultimaAula = logsAnteriores[0];
+        
+        proximoLado = (ultimaAula.lado_presente === 'A') ? 'B' : 'A';
+        msgUltimaAula = `A última aula registrada foi com o Lado ${ultimaAula.lado_presente} no dia ${ultimaAula.data_aula.split('-').reverse().join('/')}.`;
+    }
+
+    // 4. Renderiza a projeção
+    painel.innerHTML = `
+        <div class="bg-blue-900/20 p-6 rounded-xl border border-blue-500/30 w-full shadow-lg">
+            <h4 class="text-blue-400 font-black tracking-widest text-[10px] uppercase mb-1">Inteligência do Calendário</h4>
+            <h2 class="text-white font-bold text-2xl mb-2">Previsão: Lado ${proximoLado}</h2>
+            <p class="text-slate-400 text-xs italic mb-6">${msgUltimaAula}</p>
+            
+            <p class="text-xs text-white font-bold mb-3">Confirme o que aconteceu nesta data:</p>
+            ${renderBotoesAcaoAula(dateStr, sede, serie, turma)}
+        </div>
+    `;
+}
+    async function registrarAulaNoBanco(dataAula, sede, serie, turma, status, lado) {
+    showLoading("Registrando no diário...");
+
+    const payload = {
+        sede, serie, nome_turma: turma, data_aula: dataAula, 
+        status, lado_presente: lado, disciplina: currentLab, atualizado_por: currentUser
+    };
+
+    try {
+        const { data, error } = await _supabase.from('registro_diario_aulas')
+            .upsert([payload], { onConflict: 'sede,serie,nome_turma,data_aula,disciplina' }).select();
+        
+        if (error) throw error;
+        
+        // Atualiza a memória apagando o antigo se existir e colocando o novo
+        allClassLogs = allClassLogs.filter(l => !(l.sede === sede && l.nome_turma === turma && l.data_aula === dataAula && l.disciplina === currentLab));
+        allClassLogs.push(data[0]);
+        
+        showToast("Registro efetuado!", "success");
+        calcularPrevisaoTurma(); // Atualiza a tela instantaneamente
+
+    } catch (err) {
+        showToast("Erro ao registrar no banco", "error");
+        console.error(err);
+    } finally {
+        hideLoading();
+    }
+}
+
+    function renderBotoesAcaoAula(dateStr, sede, serie, turma) {
+    return `
+        <div class="flex gap-2 justify-center">
+            <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg">Lado A Presente</button>
+            <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-lg shadow-lg">Lado B Presente</button>
+            <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'cancelada', null)" class="flex-1 bg-slate-700 hover:bg-red-600 text-white font-bold py-3 rounded-lg shadow-lg border border-slate-600 hover:border-red-500">🚫 Cancelada</button>
+        </div>
+    `;
 }
 
 // Funções de salvamento (mock por enquanto)
-function saveHorarioFixo() { alert("Será integrado no próximo passo!"); }
-function saveEventoGlobal() { alert("Será integrado no próximo passo!"); }
+async function saveHorarioFixo() {
+    const sede = document.getElementById('cal-horario-sede').value;
+    const serie = document.getElementById('cal-horario-serie').value;
+    const turma = document.getElementById('cal-horario-turma').value;
+    const dia = document.getElementById('cal-horario-dia').value;
+
+    if (!sede || !serie || !turma || !dia) return showToast("Preencha todos os campos do horário", "error");
+
+    showLoading("Salvando horário...");
+    const payload = { sede, serie, nome_turma: turma, dia_semana: parseInt(dia), disciplina: currentLab };
+
+    try {
+        const { data, error } = await _supabase.from('horario_aulas')
+            .upsert([payload], { onConflict: 'sede,serie,nome_turma,disciplina' }).select();
+        
+        if (error) throw error;
+        
+        // Atualiza memória e tela
+        allSchedules = allSchedules.filter(s => !(s.sede === sede && s.nome_turma === turma && s.disciplina === currentLab));
+        allSchedules.push(data[0]);
+        renderHorariosFixos();
+        showToast("Horário salvo!", "success");
+    } catch (err) {
+        showToast("Erro ao salvar horário", "error");
+    } finally {
+        hideLoading();
+    }
+}
+async function saveEventoGlobal() {
+    const tipo = document.getElementById('cal-ev-tipo').value;
+    const titulo = document.getElementById('cal-ev-titulo').value.trim();
+    const inicio = document.getElementById('cal-ev-inicio').value;
+    const fim = document.getElementById('cal-ev-fim').value;
+
+    if (!titulo || !inicio || !fim) return showToast("Preencha título e as datas", "error");
+    if (new Date(inicio) > new Date(fim)) return showToast("A data inicial não pode ser depois da final", "error");
+
+    showLoading("Salvando evento...");
+    const payload = { tipo, titulo, data_inicio: inicio, data_fim: fim, disciplina: currentLab };
+
+    try {
+        const { data, error } = await _supabase.from('calendario_eventos').insert([payload]).select();
+        if (error) throw error;
+        
+        allEvents.push(data[0]);
+        document.getElementById('cal-ev-titulo').value = '';
+        renderEventosGlobais();
+        showToast("Evento cadastrado!", "success");
+    } catch (err) {
+        showToast("Erro ao salvar evento", "error");
+    } finally {
+        hideLoading();
+    }
+}
     
     // FERRAMENTA DE DIAGNÓSTICO
 async function debugSupabase() {
