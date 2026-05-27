@@ -1682,15 +1682,19 @@ function updateEvalFilters() {
                 </div>
 
                 <div id="tab-content-eventos" class="hidden flex-1 flex flex-col overflow-hidden">
-                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4 bg-slate-900 p-4 rounded-xl border border-slate-700 items-end">
-                        <div class="col-span-2 md:col-span-1"><label class="text-xs text-slate-400 font-bold block mb-1">Tipo</label><select id="cal-ev-tipo" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="feriado">Feriado</option><option value="provas">Semana de Provas</option><option value="ferias">Férias</option><option value="outros">Outros Bloqueios</option></select></div>
-                        <div class="col-span-2"><label class="text-xs text-slate-400 font-bold block mb-1">Título</label><input type="text" id="cal-ev-titulo" placeholder="Ex: Provas Bimestrais..." class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
-                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Início</label><input type="date" id="cal-ev-inicio" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
-                        <div><label class="text-xs text-slate-400 font-bold block mb-1">Fim</label><input type="date" id="cal-ev-fim" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
-                        <button onclick="saveEventoGlobal()" class="col-span-2 md:col-span-5 bg-amber-600 text-white py-2 rounded font-bold hover:bg-amber-500 mt-2">Gravar Evento / Bloqueio</button>
-                    </div>
-                    <div id="lista-eventos-globais" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pb-10"></div>
-                </div>
+                    <div id="tab-content-eventos" class="hidden flex-1 flex flex-col overflow-hidden">
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4 bg-slate-900 p-4 rounded-xl border border-slate-700 items-end">
+        <div class="col-span-2 md:col-span-1"><label class="text-xs text-slate-400 font-bold block mb-1">Tipo</label><select id="cal-ev-tipo" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="feriado">Feriado</option><option value="provas">Semana de Provas</option><option value="ferias">Férias</option><option value="outros">Outros Bloqueios</option></select></div>
+        <div class="col-span-2 md:col-span-2"><label class="text-xs text-slate-400 font-bold block mb-1">Título</label><input type="text" id="cal-ev-titulo" placeholder="Ex: Provas Bimestrais..." class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
+        <div><label class="text-xs text-slate-400 font-bold block mb-1">Sede</label><select id="cal-ev-sede" onchange="updateCalEventSeries()" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="todos">Todas</option></select></div>
+        <div><label class="text-xs text-slate-400 font-bold block mb-1">Série</label><select id="cal-ev-serie" onchange="updateCalEventTurmas()" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="todos">Todas</option></select></div>
+        <div><label class="text-xs text-slate-400 font-bold block mb-1">Turma</label><select id="cal-ev-turma" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="todos">Todas</option></select></div>
+        <div class="col-span-2 md:col-span-1"><label class="text-xs text-slate-400 font-bold block mb-1">Início</label><input type="date" id="cal-ev-inicio" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
+        <div class="col-span-2 md:col-span-1"><label class="text-xs text-slate-400 font-bold block mb-1">Fim</label><input type="date" id="cal-ev-fim" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
+        <button onclick="saveEventoGlobal()" class="col-span-2 md:col-span-6 bg-amber-600 text-white py-2 rounded font-bold hover:bg-amber-500 mt-2">Gravar Evento / Bloqueio</button>
+    </div>
+    <div id="lista-eventos-globais" class="flex-1 overflow-y-auto custom-scrollbar space-y-2 pb-10"></div>
+</div>
             </div>
         </div>
         `;
@@ -3121,7 +3125,13 @@ function calcularPrevisaoTurma() {
     }
 
     // 2. Verifica se a data cai em algum Evento/Feriado/Provas
-    const eventoAtivo = allEvents.find(ev => ev.disciplina === currentLab && dateStr >= ev.data_inicio && dateStr <= ev.data_fim);
+    const eventoAtivo = allEvents.find(ev => 
+    ev.disciplina === currentLab && 
+    dateStr >= ev.data_inicio && dateStr <= ev.data_fim &&
+    (!ev.sede || ev.sede === sede) &&
+    (!ev.serie || ev.serie === serie) &&
+    (!ev.nome_turma || ev.nome_turma === turma)
+);
     
     if (eventoAtivo) {
         painel.innerHTML = `
@@ -3247,6 +3257,53 @@ async function saveEventoGlobal() {
         
         allEvents.push(data[0]);
         document.getElementById('cal-ev-titulo').value = '';
+        renderEventosGlobais();
+        showToast("Evento cadastrado!", "success");
+    } catch (err) {
+        showToast("Erro ao salvar evento", "error");
+    } finally {
+        hideLoading();
+    }
+}
+    function updateCalEventSeries() {
+    const sede = document.getElementById('cal-ev-sede').value;
+    const series = [...new Set(allStudents.filter(s => s.sede === sede).map(s => s.serie))].filter(Boolean).sort();
+    document.getElementById('cal-ev-serie').innerHTML = '<option value="todos">Todas</option>' + series.map(s => `<option value="${s}">${s}</option>`).join('');
+    document.getElementById('cal-ev-turma').innerHTML = '<option value="todos">Todas</option>';
+}
+
+function updateCalEventTurmas() {
+    const sede = document.getElementById('cal-ev-sede').value;
+    const serie = document.getElementById('cal-ev-serie').value;
+    const turmas = [...new Set(allStudents.filter(s => s.sede === sede && s.serie === serie).map(s => s.nome_turma))].filter(Boolean).sort();
+    document.getElementById('cal-ev-turma').innerHTML = '<option value="todos">Todas</option>' + turmas.map(t => `<option value="${t}">${t}</option>`).join('');
+}
+
+// Atualize sua função saveEventoGlobal para capturar esses novos valores:
+async function saveEventoGlobal() {
+    const tipo = document.getElementById('cal-ev-tipo').value;
+    const titulo = document.getElementById('cal-ev-titulo').value.trim();
+    const inicio = document.getElementById('cal-ev-inicio').value;
+    const fim = document.getElementById('cal-ev-fim').value;
+    const sede = document.getElementById('cal-ev-sede').value;
+    const serie = document.getElementById('cal-ev-serie').value;
+    const turma = document.getElementById('cal-ev-turma').value;
+
+    if (!titulo || !inicio || !fim) return showToast("Preencha título e as datas", "error");
+
+    showLoading("Salvando evento...");
+    const payload = { 
+        tipo, titulo, data_inicio: inicio, data_fim: fim, 
+        sede: sede === 'todos' ? null : sede,
+        serie: serie === 'todos' ? null : serie,
+        nome_turma: turma === 'todos' ? null : turma,
+        disciplina: currentLab 
+    };
+
+    try {
+        const { data, error } = await _supabase.from('calendario_eventos').insert([payload]).select();
+        if (error) throw error;
+        allEvents.push(data[0]);
         renderEventosGlobais();
         showToast("Evento cadastrado!", "success");
     } catch (err) {
