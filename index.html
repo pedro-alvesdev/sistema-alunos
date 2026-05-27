@@ -1682,7 +1682,6 @@ function updateEvalFilters() {
                 </div>
 
                 <div id="tab-content-eventos" class="hidden flex-1 flex flex-col overflow-hidden">
-                    <div id="tab-content-eventos" class="hidden flex-1 flex flex-col overflow-hidden">
     <div class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4 bg-slate-900 p-4 rounded-xl border border-slate-700 items-end">
         <div class="col-span-2 md:col-span-1"><label class="text-xs text-slate-400 font-bold block mb-1">Tipo</label><select id="cal-ev-tipo" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"><option value="feriado">Feriado</option><option value="provas">Semana de Provas</option><option value="ferias">Férias</option><option value="outros">Outros Bloqueios</option></select></div>
         <div class="col-span-2 md:col-span-2"><label class="text-xs text-slate-400 font-bold block mb-1">Título</label><input type="text" id="cal-ev-titulo" placeholder="Ex: Provas Bimestrais..." class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></div>
@@ -2968,7 +2967,8 @@ function openCalendarManagementModal() {
     const sedes = [...new Set(allStudents.map(s => s.sede))].filter(Boolean).sort();
     const sedeOpts = '<option value="">Selecione a Sede...</option>' + sedes.map(s => `<option value="${s}">${s}</option>`).join('');
     
-    document.getElementById('cal-dia-sede').innerHTML = sedeOpts;
+   document.getElementById('cal-dia-sede').innerHTML = sedeOpts;
+    document.getElementById('cal-ev-sede').innerHTML = sedeOpts;
     document.getElementById('cal-horario-sede').innerHTML = sedeOpts;
 
     // Reseta as séries e turmas
@@ -2993,6 +2993,7 @@ function openCalendarManagementModal() {
     document.getElementById(`${prefix}-turma`).innerHTML = `<option value="">${context === 'diario' ? 'Selecione a Turma...' : 'Turma...'}</option>`;
     
     if (context === 'diario') calcularPrevisaoTurma();
+      renderEventosGlobais();
 }
 
 function closeCalendarManagementModal() {
