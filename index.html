@@ -434,10 +434,12 @@ function hideLoading() {
 }
 
     // --- INTERFACE: HEADER & NAVEGAÇÃO ---
+   // --- INTERFACE: HEADER & NAVEGAÇÃO ---
     function renderNavigationHeader() {
     const config = defaultConfig;
-    // Se não estiver autenticado como admin, mostra apenas o botão de Sair
-    const isAdmin = isAuthenticated === true; 
+    
+    // A CORREÇÃO ESTÁ AQUI: Verifica se está logado E se o usuário atual é realmente um Administrador
+    const isAdmin = isAuthenticated === true && currentUser.includes('admin'); 
 
     return `
         <header class="mb-8">
