@@ -3147,6 +3147,7 @@ function renderEventosGlobais() {
     }).join('');
 }
 
+// --- ABA 1: O ALGORITMO DE PREVISÃO DIÁRIA ---
 function calcularPrevisaoTurma() {
     const dateStr = document.getElementById('cal-dia-aula').value; // Formato YYYY-MM-DD
     const sede = document.getElementById('cal-dia-sede').value;
@@ -3159,65 +3160,152 @@ function calcularPrevisaoTurma() {
         return;
     }
 
-    // 1. Verifica se há log cadastrado exato para este dia e turma
+    // Criamos a data garantindo que o fuso horário não mude o dia
+    const dataSelecionada = new Date(dateStr + 'T12:00:00');
+
+    // 0. Verifica se a turma tem um horário fixo cadastrado
+    const horario = allSchedules.find(s => s.sede === sede && s.nome_turma === turma && s.disciplina === currentLab);
+    if (!horario) {
+        painel.innerHTML = `<div class="bg-amber-900/20 p-6 rounded-xl border border-amber-500/30 w-full text-center">
+            <h4 class="text-amber-400 font-bold text-lg mb-2">Turma sem Horário Fixo</h4>
+            <p class="text-slate-300 text-sm mb-4">O algoritmo precisa saber em qual dia da semana essa turma tem aula.</p>
+            <p class="text-xs text-amber-500 font-bold uppercase tracking-widest">Vá na aba "⏰ Horários Fixos" e defina.</p>
+        </div>`;
+        return;
+    }
+
+    // Verifica se a data que o professor clicou cai no mesmo dia da semana fixo da turma
+    const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    let avisoDiaExtra = "";
+    if (dataSelecionada.getDay() !== horario.dia_semana) {
+        avisoDiaExtra = `<p class="text-amber-400 text-[10px] uppercase font-bold mb-3 border border-amber-500/30 bg-amber-900/20 py-1 px-2 rounded inline-block">⚠️ Atenção: O dia normal desta turma é ${diasNomes[horario.dia_semana]}</p>`;
+    }
+
+    // 1. Verifica se há log cadastrado EXATO para este dia
     const logHoje = allClassLogs.find(l => l.sede === sede && l.nome_turma === turma && l.data_aula === dateStr && l.disciplina === currentLab);
 
     if (logHoje) {
         let msg = logHoje.status === 'realizada' ? `<span class="text-emerald-400">✅ Aula Realizada (Lado ${logHoje.lado_presente})</span>` : `<span class="text-red-400">❌ Aula Cancelada</span>`;
         painel.innerHTML = `
-            <div class="bg-slate-800 p-6 rounded-xl border border-slate-600 w-full">
-                <h4 class="text-white font-bold text-lg mb-2">Registro Encontrado</h4>
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-600 w-full shadow-lg">
+                ${avisoDiaExtra}
+                <h4 class="text-white font-bold text-lg mb-2">Registro Já Existente</h4>
                 <p class="text-sm font-bold bg-slate-900 py-3 rounded-lg border border-slate-700 mb-4">${msg}</p>
                 <p class="text-xs text-slate-400 mb-4">Você pode sobrepor esse registro lançando um novo abaixo.</p>
-                ${renderBotoesAcaoAula(dateStr, sede, serie, turma)}
+                <div class="flex gap-2 justify-center">
+                    <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" class="flex-1 bg-slate-700 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-all">Lado A</button>
+                    <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" class="flex-1 bg-slate-700 hover:bg-purple-600 text-white font-bold py-3 rounded-lg transition-all">Lado B</button>
+                    <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'cancelada', null)" class="flex-1 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white font-bold py-3 rounded-lg border border-slate-600 hover:border-red-500 transition-all">🚫 Cancelar</button>
+                </div>
             </div>`;
         return;
     }
 
-    // 2. Verifica se a data cai em algum Evento/Feriado/Provas
+    // 2. Verifica se a data selecionada cai em um Feriado/Evento
     const eventoAtivo = allEvents.find(ev => 
-    ev.disciplina === currentLab && 
-    dateStr >= ev.data_inicio && dateStr <= ev.data_fim &&
-    (!ev.sede || ev.sede === sede) &&
-    (!ev.serie || ev.serie === serie) &&
-    (!ev.nome_turma || ev.nome_turma === turma)
-);
+        ev.disciplina === currentLab && 
+        dateStr >= ev.data_inicio && dateStr <= ev.data_fim &&
+        (!ev.sede || ev.sede === sede) &&
+        (!ev.serie || ev.serie === serie) &&
+        (!ev.nome_turma || ev.nome_turma === turma)
+    );
     
     if (eventoAtivo) {
         painel.innerHTML = `
-            <div class="bg-amber-900/20 p-6 rounded-xl border border-amber-500/30 w-full">
+            <div class="bg-amber-900/20 p-6 rounded-xl border border-amber-500/30 w-full shadow-lg">
                 <h4 class="text-amber-400 font-bold text-lg mb-2">Bloqueio de Calendário</h4>
-                <p class="text-white text-sm">O sistema identificou o evento: <b>${eventoAtivo.titulo}</b>.</p>
-                <p class="text-xs text-slate-400 mt-4 mb-4">Se a aula ocorreu mesmo assim (ex: reposição), use os botões abaixo.</p>
-                ${renderBotoesAcaoAula(dateStr, sede, serie, turma)}
+                <p class="text-white text-sm">Identificamos o evento: <b>${eventoAtivo.titulo}</b>.</p>
+                <p class="text-xs text-slate-400 mt-4 mb-4">Se a aula ocorreu como reposição, force o lançamento abaixo.</p>
+                <div class="flex gap-2 justify-center">
+                    <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" class="flex-1 bg-slate-700 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-all">Lado A</button>
+                    <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" class="flex-1 bg-slate-700 hover:bg-purple-600 text-white font-bold py-3 rounded-lg transition-all">Lado B</button>
+                </div>
             </div>`;
         return;
     }
 
-    // 3. ALGORITMO: Procura quem foi o último a ter aula
-    const logsAnteriores = allClassLogs.filter(l => l.sede === sede && l.nome_turma === turma && l.data_aula < dateStr && l.disciplina === currentLab && l.status === 'realizada');
+    // 3. ALGORITMO INTELIGENTE: Projeção de Linha do Tempo
+    const logsTurma = allClassLogs.filter(l => l.sede === sede && l.nome_turma === turma && l.disciplina === currentLab);
+    const logsRealizados = logsTurma.filter(l => l.status === 'realizada' && l.data_aula < dateStr);
     
-    let proximoLado = 'A'; // Padrão se nunca tiveram aula
-    let msgUltimaAula = "Nenhum registro anterior encontrado. Iniciando ciclo.";
+    let proximoLado = 'A';
+    let numAula = 1;
+    let msgExplicativa = "Primeira aula identificada para esta turma.";
 
-    if (logsAnteriores.length > 0) {
-        // Pega a aula mais recente ordenando por data
-        logsAnteriores.sort((a,b) => new Date(b.data_aula) - new Date(a.data_aula));
-        const ultimaAula = logsAnteriores[0];
+    if (logsRealizados.length > 0) {
+        // Pega a aula mais recente do passado
+        logsRealizados.sort((a,b) => new Date(b.data_aula) - new Date(a.data_aula));
+        const ultimoLog = logsRealizados[0];
         
-        proximoLado = (ultimaAula.lado_presente === 'A') ? 'B' : 'A';
-        msgUltimaAula = `A última aula registrada foi com o Lado ${ultimaAula.lado_presente} no dia ${ultimaAula.data_aula.split('-').reverse().join('/')}.`;
+        // Inicia o cursor de tempo no dia SEGUINTE à última aula
+        let dataCursor = new Date(ultimoLog.data_aula + 'T12:00:00');
+        dataCursor.setDate(dataCursor.getDate() + 1);
+        
+        let ladoSimulado = ultimoLog.lado_presente;
+        let countAulas = logsRealizados.length; // Quantidade de aulas que já ocorreram
+
+        // Avança dia a dia no tempo até chegar no dia que o professor selecionou
+        while (dataCursor < dataSelecionada) {
+            // Se o dia do cursor for o dia da semana oficial da turma, verificamos se teve aula
+            if (dataCursor.getDay() === horario.dia_semana) {
+                const cursorStr = dataCursor.toISOString().split('T')[0];
+                
+                // Vê se tinha feriado neste dia do passado
+                const evt = allEvents.find(ev => 
+                    ev.disciplina === currentLab && 
+                    cursorStr >= ev.data_inicio && cursorStr <= ev.data_fim &&
+                    (!ev.sede || ev.sede === sede) && (!ev.serie || ev.serie === serie) && (!ev.nome_turma || ev.nome_turma === turma)
+                );
+                
+                // Vê se você marcou 'cancelada' neste dia do passado
+                const isCanceled = logsTurma.some(l => l.data_aula === cursorStr && l.status === 'cancelada');
+                
+                // Se NÃO teve feriado e NÃO foi cancelada, significa que a fila andou!
+                if (!evt && !isCanceled) {
+                    ladoSimulado = ladoSimulado === 'A' ? 'B' : 'A';
+                    countAulas++;
+                }
+            }
+            dataCursor.setDate(dataCursor.getDate() + 1);
+        }
+
+        // Agora que a simulação chegou no dia selecionado, damos o último salto de Lado
+        proximoLado = ladoSimulado === 'A' ? 'B' : 'A';
+        numAula = countAulas + 1;
+        
+        const dtUltima = ultimoLog.data_aula.split('-').reverse().join('/');
+        const saltos = numAula - logsRealizados.length - 1;
+        msgExplicativa = `Última aula real: Lado ${ultimoLog.lado_presente} em ${dtUltima}. ${saltos > 0 ? `Projetando ${saltos} semanas puladas...` : 'Sequência normal.'}`;
     }
 
-    // 4. Renderiza a projeção
+    // 4. Renderiza a projeção final com Botões Inteligentes
     painel.innerHTML = `
-        <div class="bg-blue-900/20 p-6 rounded-xl border border-blue-500/30 w-full shadow-lg">
-            <h4 class="text-blue-400 font-black tracking-widest text-[10px] uppercase mb-1">Inteligência do Calendário</h4>
-            <h2 class="text-white font-bold text-2xl mb-2">Previsão: Lado ${proximoLado}</h2>
-            <p class="text-slate-400 text-xs italic mb-6">${msgUltimaAula}</p>
+        <div class="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full shadow-2xl relative overflow-hidden">
+            ${avisoDiaExtra}
+            <div class="flex items-center justify-between mb-2">
+                <h4 class="text-blue-400 font-black tracking-widest text-[10px] uppercase">Inteligência do Calendário</h4>
+                <span class="bg-blue-600 text-white text-[10px] font-black px-2 py-1 rounded shadow-lg shadow-blue-900/50">AULA Nº ${numAula}</span>
+            </div>
+            <h2 class="text-white font-bold text-3xl mb-1">Previsão: Lado <span class="${proximoLado === 'A' ? 'text-blue-400' : 'text-purple-400'}">${proximoLado}</span></h2>
+            <p class="text-slate-500 text-xs italic mb-6">${msgExplicativa}</p>
             
-            <p class="text-xs text-white font-bold mb-3">Confirme o que aconteceu nesta data:</p>
-            ${renderBotoesAcaoAula(dateStr, sede, serie, turma)}
+            <p class="text-xs text-slate-300 font-bold mb-3 uppercase tracking-wider">Confirme a Aula de Hoje:</p>
+            <div class="flex gap-2 justify-center">
+                <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" 
+                    class="flex-1 ${proximoLado === 'A' ? 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-500/30' : 'bg-slate-800 hover:bg-blue-600 opacity-60 hover:opacity-100 border border-slate-700'} text-white font-bold py-4 rounded-xl transition-all duration-300">
+                    Lado A
+                </button>
+                
+                <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" 
+                    class="flex-1 ${proximoLado === 'B' ? 'bg-purple-600 hover:bg-purple-500 ring-4 ring-purple-500/30' : 'bg-slate-800 hover:bg-purple-600 opacity-60 hover:opacity-100 border border-slate-700'} text-white font-bold py-4 rounded-xl transition-all duration-300">
+                    Lado B
+                </button>
+                
+                <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'cancelada', null)" 
+                    class="flex-1 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white font-bold py-4 rounded-xl border border-slate-700 hover:border-red-500 transition-all duration-300">
+                    🚫 Cancelar
+                </button>
+            </div>
         </div>
     `;
 }
@@ -3250,16 +3338,7 @@ function calcularPrevisaoTurma() {
     }
 }
 
-    function renderBotoesAcaoAula(dateStr, sede, serie, turma) {
-    return `
-        <div class="flex gap-2 justify-center">
-            <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg">Lado A Presente</button>
-            <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-lg shadow-lg">Lado B Presente</button>
-            <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'cancelada', null)" class="flex-1 bg-slate-700 hover:bg-red-600 text-white font-bold py-3 rounded-lg shadow-lg border border-slate-600 hover:border-red-500">🚫 Cancelada</button>
-        </div>
-    `;
-}
-
+   
 // Funções de salvamento (mock por enquanto)
 async function saveHorarioFixo() {
     const sede = document.getElementById('cal-horario-sede').value;
