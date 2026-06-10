@@ -1685,15 +1685,15 @@ function updateEvalFilters() {
                     <button onclick="switchCalendarTab('eventos')" id="tab-btn-eventos" class="px-4 py-2 text-sm font-bold rounded-t-lg bg-slate-700 text-slate-400 hover:text-white transition-colors">🛑 Feriados e Eventos</button>
                 </div>
 
-                <div id="tab-content-diario" class="flex-1 flex flex-col overflow-hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-slate-900 p-4 rounded-xl border border-slate-700">
+                <div id="tab-content-diario" class="flex-1 flex flex-col overflow-y-auto custom-scrollbar pr-2 pb-2">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 bg-slate-900 p-4 rounded-xl border border-slate-700 shrink-0">
                         <div><label class="text-xs text-slate-400 font-bold block mb-1">Data da Aula</label><input type="date" id="cal-dia-aula" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm" onchange="calcularPrevisaoTurma()"></div>
                         <div><label class="text-xs text-slate-400 font-bold block mb-1">Sede</label><select id="cal-dia-sede" onchange="updateCalSeries('diario')" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></select></div>
                         <div><label class="text-xs text-slate-400 font-bold block mb-1">Série</label><select id="cal-dia-serie" onchange="updateCalTurmas('diario')" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></select></div>
                         <div><label class="text-xs text-slate-400 font-bold block mb-1">Turma</label><select id="cal-dia-turma" onchange="calcularPrevisaoTurma()" class="w-full p-2 bg-slate-800 border border-slate-600 rounded text-white text-sm"></select></div>
                     </div>
                     
-                    <div id="painel-previsao-aula" class="flex-1 bg-slate-900 rounded-xl border border-slate-700 p-6 flex flex-col items-center justify-center text-center">
+                    <div id="painel-previsao-aula" class="flex-1 min-h-[300px] bg-slate-900 rounded-xl border border-slate-700 p-4 sm:p-6 flex flex-col items-center justify-center text-center">
                         <p class="text-slate-500 italic">Selecione a Data, Sede, Série e Turma para carregar a projeção.</p>
                     </div>
                 </div>
@@ -3148,6 +3148,7 @@ function renderEventosGlobais() {
 }
 
 // --- ABA 1: O ALGORITMO DE PREVISÃO DIÁRIA ---
+// --- ABA 1: O ALGORITMO DE PREVISÃO DIÁRIA ---
 function calcularPrevisaoTurma() {
     const dateStr = document.getElementById('cal-dia-aula').value; // Formato YYYY-MM-DD
     const sede = document.getElementById('cal-dia-sede').value;
@@ -3178,7 +3179,7 @@ function calcularPrevisaoTurma() {
     const diasNomes = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
     let avisoDiaExtra = "";
     if (dataSelecionada.getDay() !== horario.dia_semana) {
-        avisoDiaExtra = `<p class="text-amber-400 text-[10px] uppercase font-bold mb-3 border border-amber-500/30 bg-amber-900/20 py-1 px-2 rounded inline-block">⚠️ Atenção: O dia normal desta turma é ${diasNomes[horario.dia_semana]}</p>`;
+        avisoDiaExtra = `<p class="text-amber-400 text-[10px] uppercase font-bold mb-4 border border-amber-500/30 bg-amber-900/20 py-1.5 px-3 rounded inline-block">⚠️ Atenção: O dia normal desta turma é ${diasNomes[horario.dia_semana]}</p>`;
     }
 
     // 1. Verifica se há log cadastrado EXATO para este dia
@@ -3187,12 +3188,12 @@ function calcularPrevisaoTurma() {
     if (logHoje) {
         let msg = logHoje.status === 'realizada' ? `<span class="text-emerald-400">✅ Aula Realizada (Lado ${logHoje.lado_presente})</span>` : `<span class="text-red-400">❌ Aula Cancelada</span>`;
         painel.innerHTML = `
-            <div class="bg-slate-800 p-6 rounded-xl border border-slate-600 w-full shadow-lg">
+            <div class="bg-slate-800 p-4 sm:p-6 rounded-xl border border-slate-600 w-full shadow-lg">
                 ${avisoDiaExtra}
                 <h4 class="text-white font-bold text-lg mb-2">Registro Já Existente</h4>
                 <p class="text-sm font-bold bg-slate-900 py-3 rounded-lg border border-slate-700 mb-4">${msg}</p>
                 <p class="text-xs text-slate-400 mb-4">Você pode sobrepor esse registro lançando um novo abaixo.</p>
-                <div class="flex gap-2 justify-center">
+                <div class="flex flex-col sm:flex-row gap-2 justify-center">
                     <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" class="flex-1 bg-slate-700 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-all">Lado A</button>
                     <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" class="flex-1 bg-slate-700 hover:bg-purple-600 text-white font-bold py-3 rounded-lg transition-all">Lado B</button>
                     <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'cancelada', null)" class="flex-1 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white font-bold py-3 rounded-lg border border-slate-600 hover:border-red-500 transition-all">🚫 Cancelar</button>
@@ -3212,11 +3213,11 @@ function calcularPrevisaoTurma() {
     
     if (eventoAtivo) {
         painel.innerHTML = `
-            <div class="bg-amber-900/20 p-6 rounded-xl border border-amber-500/30 w-full shadow-lg">
+            <div class="bg-amber-900/20 p-4 sm:p-6 rounded-xl border border-amber-500/30 w-full shadow-lg">
                 <h4 class="text-amber-400 font-bold text-lg mb-2">Bloqueio de Calendário</h4>
                 <p class="text-white text-sm">Identificamos o evento: <b>${eventoAtivo.titulo}</b>.</p>
                 <p class="text-xs text-slate-400 mt-4 mb-4">Se a aula ocorreu como reposição, force o lançamento abaixo.</p>
-                <div class="flex gap-2 justify-center">
+                <div class="flex flex-col sm:flex-row gap-2 justify-center">
                     <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" class="flex-1 bg-slate-700 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition-all">Lado A</button>
                     <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" class="flex-1 bg-slate-700 hover:bg-purple-600 text-white font-bold py-3 rounded-lg transition-all">Lado B</button>
                 </div>
@@ -3242,7 +3243,7 @@ function calcularPrevisaoTurma() {
         dataCursor.setDate(dataCursor.getDate() + 1);
         
         let ladoSimulado = ultimoLog.lado_presente;
-        let countAulas = logsRealizados.length; // Quantidade de aulas que já ocorreram
+        let countAulas = logsRealizados.length; 
 
         // Avança dia a dia no tempo até chegar no dia que o professor selecionou
         while (dataCursor < dataSelecionada) {
@@ -3280,29 +3281,29 @@ function calcularPrevisaoTurma() {
 
     // 4. Renderiza a projeção final com Botões Inteligentes
     painel.innerHTML = `
-        <div class="bg-slate-900 p-6 rounded-xl border border-slate-700 w-full shadow-2xl relative overflow-hidden">
+        <div class="bg-slate-900 p-4 sm:p-6 rounded-xl border border-slate-700 w-full shadow-2xl relative">
             ${avisoDiaExtra}
             <div class="flex items-center justify-between mb-2">
                 <h4 class="text-blue-400 font-black tracking-widest text-[10px] uppercase">Inteligência do Calendário</h4>
-                <span class="bg-blue-600 text-white text-[10px] font-black px-2 py-1 rounded shadow-lg shadow-blue-900/50">AULA Nº ${numAula}</span>
+                <span class="bg-blue-600 text-white text-[10px] font-black px-2 py-1 rounded shadow-lg shadow-blue-900/50 shrink-0 ml-2">AULA Nº ${numAula}</span>
             </div>
-            <h2 class="text-white font-bold text-3xl mb-1">Previsão: Lado <span class="${proximoLado === 'A' ? 'text-blue-400' : 'text-purple-400'}">${proximoLado}</span></h2>
+            <h2 class="text-white font-bold text-2xl sm:text-3xl mb-1">Previsão: Lado <span class="${proximoLado === 'A' ? 'text-blue-400' : 'text-purple-400'}">${proximoLado}</span></h2>
             <p class="text-slate-500 text-xs italic mb-6">${msgExplicativa}</p>
             
             <p class="text-xs text-slate-300 font-bold mb-3 uppercase tracking-wider">Confirme a Aula de Hoje:</p>
-            <div class="flex gap-2 justify-center">
+            <div class="flex flex-col sm:flex-row gap-2 justify-center">
                 <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'A')" 
-                    class="flex-1 ${proximoLado === 'A' ? 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-500/30' : 'bg-slate-800 hover:bg-blue-600 opacity-60 hover:opacity-100 border border-slate-700'} text-white font-bold py-4 rounded-xl transition-all duration-300">
+                    class="flex-1 ${proximoLado === 'A' ? 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-500/30' : 'bg-slate-800 hover:bg-blue-600 opacity-60 hover:opacity-100 border border-slate-700'} text-white font-bold py-3 sm:py-4 rounded-xl transition-all duration-300">
                     Lado A
                 </button>
                 
                 <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'realizada', 'B')" 
-                    class="flex-1 ${proximoLado === 'B' ? 'bg-purple-600 hover:bg-purple-500 ring-4 ring-purple-500/30' : 'bg-slate-800 hover:bg-purple-600 opacity-60 hover:opacity-100 border border-slate-700'} text-white font-bold py-4 rounded-xl transition-all duration-300">
+                    class="flex-1 ${proximoLado === 'B' ? 'bg-purple-600 hover:bg-purple-500 ring-4 ring-purple-500/30' : 'bg-slate-800 hover:bg-purple-600 opacity-60 hover:opacity-100 border border-slate-700'} text-white font-bold py-3 sm:py-4 rounded-xl transition-all duration-300">
                     Lado B
                 </button>
                 
                 <button onclick="registrarAulaNoBanco('${dateStr}', '${sede}', '${serie}', '${turma}', 'cancelada', null)" 
-                    class="flex-1 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white font-bold py-4 rounded-xl border border-slate-700 hover:border-red-500 transition-all duration-300">
+                    class="flex-1 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white font-bold py-3 sm:py-4 rounded-xl border border-slate-700 hover:border-red-500 transition-all duration-300">
                     🚫 Cancelar
                 </button>
             </div>
